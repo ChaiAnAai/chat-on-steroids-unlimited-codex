@@ -32,7 +32,7 @@ beforeAll(async () => {
     fs.readFile(path.join(process.cwd(), 'src', 'renderer', 'chat.ts'), 'utf8')
   ]);
   document = new JSDOM(html).window.document;
-  css = styles;
+  css = styles + '\n' + await fs.readFile(path.join(process.cwd(), 'src', 'renderer', 'workspace.css'), 'utf8');
   chatSource = chat;
 });
 
@@ -131,8 +131,9 @@ describe('the session card header', () => {
     const title = rule('#chatTitle');
     expect(title).toContain('min-width: 0');
     expect(title).toContain('text-overflow: ellipsis');
-    // The title is the first child of the header, which is what that selector relies on.
-    expect(document.querySelector('#chatTitle')!.closest('header')!.firstElementChild!.id).toBe('chatTitle');
+    // Project context precedes the flexible title; actions stay in their own fixed cluster.
+    expect(document.querySelector('#chatTitle')!.previousElementSibling!.id).toBe('taskProject');
+    expect(rule('.app > header .state')).toContain('flex: none');
   });
 
   it('has a place to say what is happening without opening the Activity log', () => {
@@ -271,12 +272,12 @@ describe('the chat panel cards', () => {
 
   it('gives the session card one row per child, including its navigation row', () => {
     const card = document.getElementById('chatBody')!.closest('.card')!;
-    // Subhead, scrolling conversation, finish-task cards, composer and footer.
+    // Subhead, conversation, finish cards, composer, keyboard/connection hint and footer.
     const layoutChildren = [...card.children].filter(child => child.id !== 'chatSettingsBtn');
-    expect(layoutChildren.length).toBe(5);
+    expect(layoutChildren.length).toBe(6);
     expect(document.getElementById('inputQueue')!.closest('#chatBody')).not.toBeNull();
     expect(card.classList.contains('is-session')).toBe(true);
-    expect(tracks("[data-panel='chat'] .card.is-session")).toHaveLength(layoutChildren.length);
+    expect(tracks(".app[data-screen='chat'] [data-panel='chat'] .card.is-session")).toHaveLength(layoutChildren.length);
   });
 
   /**
@@ -287,7 +288,7 @@ describe('the chat panel cards', () => {
     const card = document.getElementById('chatBody')!.closest('.card')!;
     const bodyIndex = [...card.children].filter(child => child.id !== 'chatSettingsBtn').indexOf(document.getElementById('chatBody')!);
     expect(bodyIndex).toBeGreaterThan(-1);
-    const list = tracks("[data-panel='chat'] .card.is-session");
+    const list = tracks(".app[data-screen='chat'] [data-panel='chat'] .card.is-session");
     expect(list[bodyIndex]).toBe('minmax');
     expect(list.filter((track) => track === 'minmax')).toHaveLength(1);
   });

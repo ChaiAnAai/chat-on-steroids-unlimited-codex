@@ -117,6 +117,7 @@ export interface TunnelSettings {
 }
 
 export interface UiPrefs {
+  appearance?: import('./appearance.js').Appearance;
   backgroundChats?: boolean;
   /** Actual app-owned tabs to retain; active work and drafts stay protected. Omitted uses workers + 2. */
   tabsToKeepOpen?: number;
@@ -129,6 +130,8 @@ export interface UiPrefs {
   autoConnect: boolean;
   /** Default screenshots to the active window instead of the whole primary monitor. */
   privacyScreenshots: boolean;
+  /** Renderer interface language. */
+  language?: import('./languages.js').LanguageCode;
   /** Explicit choice, never inherited from the OS: the window looks how you left it. */
   theme: 'light' | 'dark';
 }
@@ -413,6 +416,8 @@ export interface LogEntry {
 
 /** What the renderer needs to know about the extension bridge, without any secrets. */
 export interface BridgeStatus {
+  /** Startup failure, separate from a browser that simply has not connected yet. */
+  startupIssue?: 'ports-unavailable' | 'recovery-failed' | null;
   running: boolean;
   port: number | null;
   /** Durable authorization: true once a browser extension has been issued this app's token. */

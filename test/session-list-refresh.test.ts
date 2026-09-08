@@ -261,7 +261,7 @@ describe('visible Chat refresh', () => {
     chatVisible(true);
     await vi.waitFor(() => expect(listCalls).toHaveLength(1));
     await vi.waitFor(() =>
-      expect(w.document.getElementById('sessionsFoot')?.textContent).toContain('60 of 65 retained sessions shown')
+      expect(w.document.getElementById('sessionsFoot')?.textContent).toContain('60 of 65 tasks loaded')
     );
 
     const pane = w.document.getElementById('sessionList')!.closest('.scroll') as HTMLElement;
@@ -272,7 +272,7 @@ describe('visible Chat refresh', () => {
     await vi.waitFor(() => expect(listCalls).toHaveLength(2));
     expect(listCalls[1]).toEqual({ cursor, limit: 60 });
     await vi.waitFor(() => expect(w.document.querySelectorAll('#sessionList .sess')).toHaveLength(65));
-    expect(w.document.getElementById('sessionsFoot')?.textContent).toContain('65 retained sessions');
+    expect(w.document.getElementById('sessionsFoot')?.textContent).toContain('65 recorded tasks');
   });
 });
 

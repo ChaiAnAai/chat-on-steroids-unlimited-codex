@@ -1,5 +1,12 @@
 import { initUsage, refreshUsage } from './usage.js';
+import { initLanguagePicker, paintLanguagePicker } from './language-picker.js';
+import { setupStatusDetail, setupAge } from './setup-copy.js';
+import { paintSetupGuide } from './setup-guide.js';
+import { initAppearance, paintAppearance } from './appearance.js';
+import type { Appearance } from '../shared/appearance.js';
 import { initBrowserPreferences } from './browser-preferences.js';
+import { setUiLanguage, ui, translate, type UiLanguage } from './i18n.js';
+import { translateMarkup } from './i18n-static.js';
 /**
  * Renderer. No Node, no filesystem, no network — everything goes through window.api.
  *
@@ -112,7 +119,9 @@ let showAllSteps = false;
 
 function showTab(name: string): void {
   const settings = name !== 'chat';
-  document.querySelector<HTMLElement>('.app')!.dataset.screen = settings ? 'settings' : 'chat';
+  const app = document.querySelector<HTMLElement>('.app')!;
+  app.dataset.screen = settings ? 'settings' : 'chat';
+  document.querySelector<HTMLElement>('.sidebar')!.inert = !settings && app.classList.contains('sidebar-collapsed');
   document.querySelector<HTMLElement>('.sidebar-brand')!.hidden = settings;
   $('workspaceSettings').hidden = settings;
   if (name === 'usage') void refreshUsage();
@@ -309,8 +318,14 @@ function capInput(cap: Capability): HTMLInputElement {
 /** Refreshes counts, the tri-state switches, and what read-only mode has locked. */
 function paintGroups(): void {
   if (!state) return;
+  const copy = ui();
   const { readOnly } = state.config;
   const desktopSupported = state.platform?.desktopAutomation ?? true;
+  for (const cap of Object.keys(CAPABILITY_LABELS) as Capability[]) {
+    const label = capInput(cap).closest('label')!;
+    label.querySelector('strong')!.textContent = translate(CAPABILITY_LABELS[cap]);
+    label.querySelector('em')!.textContent = translate(CAPABILITY_DETAILS[cap]);
+  }
 
   for (const group of GROUPS) {
     const root = document.querySelector<HTMLElement>(`[data-group="${group.id}"]`)!;
@@ -320,24 +335,33 @@ function paintGroups(): void {
       for (const cap of group.caps) capInput(cap).disabled = true;
       continue;
     }
+    const title = group.id === 'read'
+      ? copy.lookAtFiles
+      : group.id === 'write'
+        ? copy.changeFiles
+        : group.id === 'desktop'
+          ? copy.seeDesktop
+          : copy.runPrograms;
+    root.querySelector('b')!.textContent = title;
+    const box = root.querySelector<HTMLInputElement>('.group-box')!;
+    box.title = copy.turnEverythingIn.replace('{group}', title);
     root.classList.toggle('is-open', openGroup === group.id);
 
     const usable = group.caps.filter((cap) => !(readOnly && WRITE_CAPABILITIES.includes(cap)));
     const on = group.caps.filter((cap) => capInput(cap).checked);
 
-    const box = root.querySelector<HTMLInputElement>('.group-box')!;
     box.checked = usable.length > 0 && usable.every((cap) => capInput(cap).checked);
     box.indeterminate = !box.checked && on.length > 0;
     box.disabled = usable.length === 0;
 
     root.querySelector<HTMLElement>('.group-count')!.textContent =
       usable.length === 0
-        ? 'off in read-only mode'
+        ? copy.sessionCountOffReadOnly
         : on.length === 0
-          ? 'off'
+          ? copy.sessionCountOff
           : on.length === group.caps.length
-            ? `${on.length} permission${on.length === 1 ? '' : 's'}`
-            : `${on.length} of ${group.caps.length} permissions`;
+            ? copy.permissionCountMany.replace('{count}', String(on.length))
+            : copy.permissionCountOf.replace('{count}', String(on.length)).replace('{total}', String(group.caps.length));
 
     root.classList.toggle('is-on', on.length > 0);
     root.classList.toggle('is-locked', usable.length === 0);
@@ -350,8 +374,8 @@ function paintGroups(): void {
   // flipped a user's just-clicked toggle back when an unsolicited stale state push
   // arrived before save completed, so this only reads them.
   for (const [id, onText] of [
-    ['recording', 'session tool exposed'],
-    ['agents', 'agents tool exposed']
+    ['recording', copy.sessionToolExposed],
+    ['agents', copy.agentsToolExposed]
   ] as Array<[string, string]>) {
     const root = document.querySelector<HTMLElement>(`[data-group="${id}"]`);
     if (!root) continue;
@@ -373,17 +397,16 @@ function paintDesktopAccess(next: AppState): void {
   }
 
   const missing: string[] = [];
-  if (needsScreen && access.screen !== 'granted') missing.push(`Screen Recording: ${access.screen}`);
+  if (needsScreen && access.screen !== 'granted') missing.push(ui().desktopAccessScreenRecording.replace('{status}', access.screen));
   if (needsAccessibility && access.accessibility !== 'granted') {
-    missing.push(`Accessibility: ${access.accessibility}`);
+    missing.push(ui().desktopAccessAccessibility.replace('{status}', access.accessibility));
   }
   box.hidden = missing.length === 0;
   if (box.hidden) return;
 
-  $('desktopAccessTitle').textContent = 'Desktop access needs attention';
+  $('desktopAccessTitle').textContent = ui().desktopAccessNeedsAttention;
   $('desktopAccessDetail').textContent =
-    `${missing.join(' · ')}. These are live verdicts from the native backend executing inside Chat On Steroids. ` +
-    'Grant the missing macOS permission, then fully quit and reopen the app.';
+    `${missing.join(' · ')}. ${ui().desktopAccessLive} ${ui().desktopAccessGrant}`;
   $<HTMLButtonElement>('openDesktopScreen').hidden =
     !needsScreen || access.screen === 'granted';
   $<HTMLButtonElement>('openDesktopAccessibility').hidden =
@@ -414,7 +437,7 @@ function toolsOn(next: AppState): number {
 let settingsSaveQueue: Promise<void> = Promise.resolve();
 let requestedSettings: SettingsPatch | null = null;
 
-function save(over: { readOnly?: boolean; theme?: 'light' | 'dark' } = {}): Promise<void> {
+function save(over: { readOnly?: boolean; theme?: 'light' | 'dark'; language?: UiLanguage; appearance?: Appearance } = {}): Promise<void> {
   if (applying || !state) return Promise.resolve();
 
   const previous: AppState['config'] = requestedSettings
@@ -451,6 +474,8 @@ function save(over: { readOnly?: boolean; theme?: 'light' | 'dark' } = {}): Prom
       minimizeToTray: $<HTMLInputElement>('minimizeToTray').checked,
       developerMode: $<HTMLInputElement>('developerMode').checked,
       privacyScreenshots: $<HTMLInputElement>('privacyScreenshots').checked,
+      language: over.language ?? previous.ui.language ?? 'en',
+      appearance: over.appearance ?? previous.ui.appearance,
       theme: over.theme ?? previous.ui.theme
     },
     ...chatPatch
@@ -488,6 +513,9 @@ async function saveSnapshot(patch: SettingsPatch, previous: AppState['config']):
     goal: previous.goal
   };
   const next = await run(api.saveSettings(patch, base));
+  // Final acknowledgement may repaint from disk. Earlier acknowledgements must retain
+  // the latest queued appearance so the next user edit cannot inherit stale colors/fonts.
+  if (requestedSettings === patch) requestedSettings = null;
   if (next) {
     apply(next);
     if (previous.multiAgent.enabled && !patch.multiAgent.enabled) {
@@ -498,21 +526,21 @@ async function saveSnapshot(patch: SettingsPatch, previous: AppState['config']):
       toast('Tools changed. Start a new ChatGPT conversation to guarantee the new tool list is loaded.');
     }
   } else await refresh();
-  // Do not erase the desired state of a newer queued save when an older one completes.
-  if (requestedSettings === patch) requestedSettings = null;
 }
 
 // ---------------------------------------------------------------- helpers
 
-const STATUS_TEXT: Record<AppState['status']['state'], string> = {
-  disconnected: 'Not connected',
-  'starting-server': 'Starting',
-  'connecting-tunnel': 'Connecting',
-  connected: 'Connected',
-  offline: 'No internet',
-  'auth-failed': 'Sign-in failed',
-  'tunnel-unavailable': 'Tunnel unavailable'
-};
+function statusText(state: AppState['status']['state']): string {
+  switch (state) {
+    case 'disconnected': return ui().notConnected;
+    case 'starting-server': return ui().starting;
+    case 'connecting-tunnel': return ui().connecting;
+    case 'connected': return ui().connected;
+    case 'offline': return ui().noInternet;
+    case 'auth-failed': return ui().signInFailed;
+    case 'tunnel-unavailable': return ui().tunnelUnavailable;
+  }
+}
 
 const METHOD_HINT: Record<string, string> = {
   openai:
@@ -666,7 +694,7 @@ function rootRow(root: AppState['config']['roots'][number]): HTMLElement {
   const rename = document.createElement('button');
   rename.className = 'btn';
   rename.type = 'button';
-  rename.title = `Rename /${root.name}`;
+  rename.title = ui().renameRoot.replace('{root}', root.name);
   rename.append(icon('i-pencil'));
   rename.addEventListener('click', () => {
     rootRename = {
@@ -685,7 +713,7 @@ function rootRow(root: AppState['config']['roots'][number]): HTMLElement {
   const remove = document.createElement('button');
   remove.className = 'btn';
   remove.type = 'button';
-  remove.title = `Stop sharing /${root.name}`;
+  remove.title = ui().stopSharingRoot.replace('{root}', root.name);
   remove.append(icon('i-trash'));
   remove.addEventListener('click', async () => {
     const result = await run(api.removeRoot(root.name));
@@ -837,6 +865,12 @@ function apply(next: AppState): void {
   state = next;
   applying = true;
   const { config, status } = next;
+  setUiLanguage(config.ui.language ?? 'en');
+  if (!previousState || previousState.config.ui.language !== config.ui.language) {
+    translateMarkup();
+    if (previousState && document.querySelector('.app')?.getAttribute('data-screen') === 'settings'
+      && document.querySelector('[data-tab="usage"]')?.classList.contains('is-sel')) void refreshUsage();
+  }
 
   const connected = status.state === 'connected';
   const offline = status.state === 'offline';
@@ -844,31 +878,36 @@ function apply(next: AppState): void {
   const failed = status.state === 'auth-failed' || status.state === 'tunnel-unavailable';
   const running = isRunning(status.state);
   const missing = missingStep(next);
+  const copy = ui();
 
   // ---- theme
+  paintAppearance(requestedSettings ? { ...config.ui, appearance: requestedSettings.ui.appearance, theme: requestedSettings.ui.theme } : config.ui);
   const dark = config.ui.theme === 'dark';
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   $('themeIcon').setAttribute('href', dark ? '#i-sun' : '#i-moon');
-  $('themeBtn').title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+  $('themeBtn').title = dark ? copy.themeLight : copy.themeDark;
+  $('languageLabel').textContent = translate('Language');
+  $<HTMLButtonElement>('languageBtn').title = translate('Language');
+  paintLanguagePicker(config.ui.language ?? 'en');
 
   // ---- header
   const live = $('live');
   live.className = `live${
     connected ? ' is-connected' : offline ? ' is-offline' : busy ? ' is-busy' : failed ? ' is-error' : ''
   }`;
-  $('liveState').textContent = STATUS_TEXT[status.state];
+  $('liveState').textContent = statusText(status.state);
 
   const id = config.tunnel.tunnelId;
   $('headerSub').textContent =
     config.tunnel.kind === 'openai'
       ? TUNNEL_ID_PATTERN.test(id)
         ? `${id.slice(0, 11)}…${id.slice(-4)}`
-        : 'No tunnel yet'
+        : ui().noTunnelYet
       : (status.publicUrl ?? status.localUrl ?? config.tunnel.kind);
 
   const connectBtn = $<HTMLButtonElement>('connectBtn');
   connectBtn.classList.toggle('is-running', running);
-  $('connectLabel').textContent = running ? 'Disconnect' : 'Connect';
+  $('connectLabel').textContent = running ? ui().disconnect : ui().connect;
   connectBtn.disabled = !running && missing !== null;
   connectBtn.title = !running && missing ? missing.text : '';
 
@@ -914,7 +953,7 @@ function apply(next: AppState): void {
     config.tunnel.kind,
     previousState?.config.tunnel.kind
   );
-  $('methodHint').textContent = METHOD_HINT[config.tunnel.kind] ?? '';
+  $('methodHint').textContent = translate(METHOD_HINT[config.tunnel.kind] ?? '');
   applyValue($<HTMLInputElement>('tunnelId'), config.tunnel.tunnelId, previousState?.config.tunnel.tunnelId);
   applyValue(
     $<HTMLInputElement>('desktopTunnelId'),
@@ -942,12 +981,12 @@ function apply(next: AppState): void {
   $('privacyScreenshotsSetting').hidden = !(next.platform?.desktopAutomation ?? true);
   if (next.platform?.family === 'macos') {
     $('backgroundRunningCopy').textContent =
-      'Leave it running while you use the connector. It stays available from the menu bar and Dock when you close the window.';
-    $('minimizeToTrayCopy').textContent = 'Hide the window to the menu bar when closed';
+      translate('Leave it running while you use the connector. It stays available from the menu bar and Dock when you close the window.');
+    $('minimizeToTrayCopy').textContent = translate('Hide the window to the menu bar when closed');
   } else {
     $('backgroundRunningCopy').textContent =
-      'Leave it running while you use the connector. It stays in the tray when you close the window.';
-    $('minimizeToTrayCopy').textContent = 'Keep running in the tray when closed';
+      translate('Leave it running while you use the connector. It stays in the tray when you close the window.');
+    $('minimizeToTrayCopy').textContent = translate('Keep running in the tray when closed');
   }
 
   const openai = config.tunnel.kind === 'openai';
@@ -961,23 +1000,23 @@ function apply(next: AppState): void {
   $('desktopTunnelField').hidden = !openai || !desktopSurface?.available;
 
   $('wizFolders').textContent =
-    config.roots.length === 0 ? 'None yet' : config.roots.map((r) => `/${r.name}`).join('  ');
+    config.roots.length === 0 ? ui().noneYet : config.roots.map((r) => `/${r.name}`).join('  ');
   const secureStorageAvailable = next.secureStorage?.available ?? true;
   const apiKey = $<HTMLInputElement>('apiKey');
-  apiKey.placeholder = next.hasApiKey ? '•••••••• stored' : 'sk-…';
+  apiKey.placeholder = next.hasApiKey ? `•••••••• ${ui().stored}` : 'sk-…';
   apiKey.disabled = !secureStorageAvailable;
   $('apiKeyState').textContent = !secureStorageAvailable
-    ? (next.secureStorage?.detail ?? 'Secure credential storage is unavailable.')
+    ? (next.secureStorage?.detail ?? ui().secureCredentialStorageUnavailable)
     : next.hasApiKey
-      ? 'A key is stored with secure OS credential storage. Type a new one to replace it, or use Remove stored API key.'
-      : 'Stored with secure OS credential storage. It is never shown again and never leaves this app.';
+      ? ui().apiKeyStored
+      : ui().apiKeyStoredSimple;
   $('apiKeyState').classList.toggle('is-warn', !secureStorageAvailable);
   $<HTMLButtonElement>('removeApiKey').disabled = !next.hasApiKey || !secureStorageAvailable;
 
   const wizConnect = $<HTMLButtonElement>('wizConnect');
-  wizConnect.textContent = running ? 'Disconnect' : 'Connect';
+  wizConnect.textContent = running ? ui().disconnect : ui().connect;
   wizConnect.disabled = connectBtn.disabled;
-  $('wizStatus').textContent = running || failed ? status.detail || STATUS_TEXT[status.state] : '';
+  $('wizStatus').textContent = running || failed ? setupStatusDetail(status.detail) || statusText(status.state) : '';
 
   $('chatgptConn').replaceChildren(
     openai
@@ -1000,23 +1039,27 @@ function apply(next: AppState): void {
   );
   chatgptNote.textContent =
     status.lastRequestAt === null
-      ? 'ChatGPT has not called this app yet.'
+      ? translate('ChatGPT has not called this app yet.')
       : status.lastToolCallAt === null
-        ? `ChatGPT connected ${ago(status.lastRequestAt)} but has never run a tool. If it says “does not support developer MCPs”, switch Developer mode back on in ChatGPT → Settings → Apps & Connectors → Advanced.`
+        ? translate('ChatGPT connected {age} but has never run a tool. If it says “does not support developer MCPs”, switch Developer mode back on in ChatGPT → Settings → Apps & Connectors → Advanced.', { age: setupAge(ago(status.lastRequestAt)) })
         : unverified.length > 0
           ? // One connector working is not the whole setup. Naming the missing one is the
             // difference between "something is off" and knowing what to go and create.
-            `ChatGPT ran a tool ${ago(status.lastToolCallAt)}, but ${unverified
-              .map((surface) => `“${surface.connectorName}”`)
-              .join(' and ')} has never been called — create it in ChatGPT to use it.`
-          : `ChatGPT ran a tool ${ago(status.lastToolCallAt)} — the whole chain works.`;
+            translate('ChatGPT ran a tool {age}, but {connectors} has never been called — create it in ChatGPT to use it.', { age: setupAge(ago(status.lastToolCallAt)), connectors: unverified.map(surface => `“${surface.connectorName}”`).join(translate(' and ')) })
+          : translate('ChatGPT ran a tool {age} — the whole chain works.', { age: setupAge(ago(status.lastToolCallAt)) });
 
   const cards = $('connectorCards');
   // A connector the user has switched on but never created in ChatGPT is unfinished setup,
   // so its card must survive the tidy collapse instead of disappearing behind "Show all
   // steps" — otherwise a half-done Desktop setup reads as a complete one.
   cards.classList.toggle('has-unfinished', unverified.length > 0);
-  cards.replaceChildren(...connectorCards(next));
+  const expandedOriginals = new Set([...cards.querySelectorAll<HTMLElement>('.connector:has(.connector-original[open])')].map(card => card.dataset.surfaceId));
+  const nextCards = connectorCards(next);
+  for (const card of nextCards) {
+    const original = card.querySelector<HTMLDetailsElement>('.connector-original');
+    if (original) original.open = expandedOriginals.has(card.dataset.surfaceId);
+  }
+  cards.replaceChildren(...nextCards);
 
   // Step marks: everything before the first unfinished step counts as done.
   const order = ['folder', 'tunnel', 'key', 'connect', 'chatgpt', 'browser'];
@@ -1050,19 +1093,20 @@ function apply(next: AppState): void {
   // collapse away so the page fits without scrolling, and come back on request.
   const allDone = current === null;
   $('wizard').classList.toggle('is-tidy', allDone && !showAllSteps);
+  paintSetupGuide(current, showAllSteps);
   const expand = $<HTMLButtonElement>('wizExpand');
-  expand.hidden = !allDone;
-  expand.textContent = showAllSteps ? 'Hide finished steps' : 'Show all steps';
+  expand.hidden = false;
+  expand.textContent = showAllSteps ? ui().hideFinishedSteps : ui().showAllSteps;
 
   const needsBinary = config.tunnel.kind !== 'manual';
   $('binaryState').textContent = !needsBinary
-    ? 'Not needed for this method.'
+    ? ui().notNeededForMethod
     : next.resolvedBinary
-      ? `Using ${next.resolvedBinary}`
-      : 'Not found. Install it, or choose the file with Browse.';
+      ? ui().usingBinary.replace('{binary}', next.resolvedBinary)
+      : ui().notFoundInstallOrBrowse;
   $('versionLine').textContent = next.bundledTunnelVersion
     ? `Recent activity only — no file contents, no credentials. Bundled tunnel-client ${next.bundledTunnelVersion}.`
-    : 'Recent activity only. File contents and credentials are never recorded.';
+    : ui().recentActivityAndNoCredentials;
 
   chatApply(next, previousState?.config);
 
@@ -1086,14 +1130,14 @@ function copyRow(label: string, value: string, what: string): HTMLElement {
   input.value = value;
   const button = el('button', 'btn btn-solid');
   (button as HTMLButtonElement).type = 'button';
-  button.append(icon('i-copy'), document.createTextNode('Copy'));
+  button.append(icon('i-copy'), document.createTextNode(translate('Copy')));
   button.addEventListener('click', async () => {
     const copied = await run(api.writeClipboard(value));
-    if (copied) toast(`${what} copied`);
+    if (copied) toast(translate('{what} copied', { what: translate(what) }));
   });
   const row = el('div', 'row-inline');
   row.append(input, button);
-  field.append(el('label', '', label), row);
+  field.append(el('label', '', translate(label)), row);
   return field;
 }
 
@@ -1112,22 +1156,27 @@ function connectorCards(next: AppState): HTMLElement[] {
     .filter((surface) => surface.id !== 'desktop' || (next.platform?.desktopAutomation ?? true))
     .map((surface) => {
     const card = el('div', `connector is-${surface.state}`);
+    card.dataset.surfaceId = surface.id;
 
     const head = el('div', 'connector-head');
     head.append(
       el('h4', '', surface.connectorName),
-      el('span', 'tag', surface.optional ? 'optional' : 'required'),
-      el('span', `pill is-${surface.state}`, SURFACE_STATE_TEXT[surface.state])
+      el('span', 'tag', translate(surface.optional ? 'optional' : 'required')),
+      el('span', `pill is-${surface.state}`, translate(SURFACE_STATE_TEXT[surface.state]))
     );
-    card.append(head, el('p', 'hint', surface.cardSummary));
+    card.append(head, el('p', 'hint', translate(surface.cardSummary)));
 
     if (!surface.available) {
-      card.append(el('p', 'hint', surface.detail));
+      card.append(el('p', 'hint', setupStatusDetail(surface.detail)));
       return card;
     }
 
-    card.append(copyRow('Name', surface.connectorName, 'Name'));
-    card.append(copyRow('Description', surface.description, 'Description'));
+    const original = document.createElement('details'); original.className = 'connector-original';
+    original.append(el('summary', '', translate('View and copy original connector text')));
+    original.append(el('p', 'hint', translate('Paste these original values into ChatGPT. Connector names and tool identifiers stay unchanged.')));
+    original.append(copyRow('Name', surface.connectorName, 'Name'));
+    original.append(copyRow('Description', surface.description, 'Description'));
+    card.append(original);
 
     // On the OpenAI method the connector is picked from a list of tunnels instead of
     // pasted as a URL, so showing a loopback address there would only mislead.
@@ -1136,7 +1185,7 @@ function connectorCards(next: AppState): HTMLElement[] {
     if (url) {
       card.append(copyRow('MCP server URL', url, 'URL'));
       card.append(
-        el('p', 'hint', 'Anyone with this URL can use your enabled tools. Do not share it.')
+        el('p', 'hint', translate('Anyone with this URL can use your enabled tools. Do not share it.'))
       );
     } else if (config.tunnel.kind === 'openai') {
       card.append(
@@ -1144,13 +1193,13 @@ function connectorCards(next: AppState): HTMLElement[] {
           'p',
           'hint',
           surface.id === 'desktop' && !config.tunnel.desktopTunnelId
-            ? 'Pick this connector’s own tunnel — paste its ID in step 2 first.'
-            : 'Choose Tunnel, then pick this connector’s tunnel.'
+            ? translate('Pick this connector’s own tunnel — paste its ID in step 2 first.')
+            : translate('Choose Tunnel, then pick this connector’s tunnel.')
         )
       );
     }
 
-    if (surface.detail && surface.state === 'error') card.append(el('p', 'hint is-warn', surface.detail));
+    if (surface.detail && surface.state === 'error') card.append(el('p', 'hint is-warn', setupStatusDetail(surface.detail)));
 
     // Published is only half the story. "Live" says this app is serving the connector;
     // it says nothing about whether the user ever created it in ChatGPT, and with two
@@ -1158,19 +1207,19 @@ function connectorCards(next: AppState): HTMLElement[] {
     if (surface.state === 'live') {
       card.append(
         surface.lastRequestAt === null
-          ? el('p', 'hint is-warn', 'Not created in ChatGPT yet — ChatGPT has never called this connector.')
+          ? el('p', 'hint is-warn', translate('Not created in ChatGPT yet — ChatGPT has never called this connector.'))
           : el(
               'p',
               'hint',
               surface.lastToolCallAt === null
-                ? `ChatGPT connected ${ago(surface.lastRequestAt)} but has not run one of its tools yet.`
-                : `ChatGPT ran one of its tools ${ago(surface.lastToolCallAt)}.`
+                ? translate('ChatGPT connected {age} but has not run one of its tools yet.', { age: setupAge(ago(surface.lastRequestAt)) })
+                : translate('ChatGPT ran one of its tools {age}.', { age: setupAge(ago(surface.lastToolCallAt)) })
             )
       );
     }
 
     if (surface.tools.length > 0) {
-      card.append(el('p', 'hint', `Tools: ${surface.tools.join(', ')}`));
+      card.append(el('p', 'hint', translate('Tools: {tools}', { tools: surface.tools.join(', ') })));
     }
     return card;
     });
@@ -1266,7 +1315,7 @@ function step(name: string): HTMLElement {
 /** Builds "text <strong>bold</strong> text" without touching innerHTML. */
 function frag(before: string, bold: string, after: string): DocumentFragment {
   const f = document.createDocumentFragment();
-  f.append(before, el('strong', '', bold), after);
+  f.append(translate(before), el('strong', '', translate(bold)), translate(after));
   return f;
 }
 
@@ -1461,7 +1510,7 @@ async function toggleConnection(): Promise<void> {
 async function runChecks(): Promise<void> {
   const button = $<HTMLButtonElement>('runChecks');
   button.disabled = true;
-  $('runChecksLabel').textContent = 'Checking…';
+  $('runChecksLabel').textContent = translate('Checking…');
   try {
     const result = await run(api.runDiagnostics());
     if (!result) return;
@@ -1482,7 +1531,7 @@ async function runChecks(): Promise<void> {
           check.status === 'pass' ? '✓' : check.status === 'fail' ? '!' : check.status === 'skipped' ? '–' : '…'
         );
         const body = el('div');
-        body.append(el('strong', '', check.name), el('p', '', check.detail));
+        body.append(el('strong', '', translate(check.name)), el('p', '', translate(check.detail)));
         li.append(mark, body);
         return li;
       })
@@ -1491,7 +1540,7 @@ async function runChecks(): Promise<void> {
     $('checksBox').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   } finally {
     button.disabled = false;
-    $('runChecksLabel').textContent = 'Run checks';
+    $('runChecksLabel').textContent = translate('Run checks');
   }
 }
 
@@ -1510,6 +1559,7 @@ $('closeChecks').addEventListener('click', () => {
   $('checksBox').hidden = true;
 });
 
+initAppearance(over => save(over));
 $('themeBtn').addEventListener('click', () => {
   if (!state) return;
   // A save can still be waiting on main-process lifecycle work. Toggle from the latest
@@ -1521,6 +1571,7 @@ $('themeBtn').addEventListener('click', () => {
   document.documentElement.dataset.theme = next;
   void save({ theme: next });
 });
+initLanguagePicker(language => save({ language }));
 
 $('readOnlyBtn').addEventListener('click', () => {
   if (!state) return;

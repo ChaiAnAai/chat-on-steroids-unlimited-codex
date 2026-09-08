@@ -171,7 +171,9 @@ import { requestCorrelation } from './session/correlation.js';
 import { bindAgentWorkspace } from './workspace.js';
 
 /** Fixed candidates so the extension can find the app without being told a port. */
-export const DEFAULT_PORTS = [8765, 8766, 8767, 8768, 8769];
+import { DISTRIBUTION } from '../shared/distribution.js';
+export const DEFAULT_PORTS = DISTRIBUTION.bridgePorts;
+let startupIssue: 'ports-unavailable' | 'recovery-failed' | null = null;
 /**
  * The shipped range is fixed on purpose, but the test suite runs many bridges in parallel
  * forks on a machine where an installed app already holds 8765. A test whose own bind lost
@@ -572,7 +574,8 @@ export async function bridgeStatus(): Promise<BridgeStatus> {
     paired: stored !== null && stored !== BROWSER_DISCONNECTED,
     present: browserPresent(),
     lastSeenAt,
-    extensionVersion
+    extensionVersion,
+    startupIssue
   };
 }
 
@@ -3767,6 +3770,7 @@ async function closeCancelledBridgeStart(instance: http.Server, actual: number |
 }
 
 async function startBridgeOnce(epoch: number): Promise<number | null> {
+  startupIssue = null;
   bridgeRecovering = true;
   const instance = http.createServer((req, res) => {
     if (bridgeRecovering) {
@@ -3806,6 +3810,7 @@ async function startBridgeOnce(epoch: number): Promise<number | null> {
       try {
         await restoreCommands();
       } catch (err) {
+        startupIssue = 'recovery-failed';
         // Recovery is part of opening the bridge, not best-effort work after it. In particular,
         // an expired revival cannot be pruned until its broker half is durably stopped. Leaving
         // the loopback server published after that barrier failed creates a half-started bridge:
@@ -3888,10 +3893,13 @@ async function startBridgeOnce(epoch: number): Promise<number | null> {
   }
   bridgeRecovering = false;
   logWarn(`bridge could not bind any of ports ${PORTS.join(', ')}; the browser extension will not connect`);
+  startupIssue = 'ports-unavailable';
+  changed();
   return null;
 }
 
 export async function stopBridge(): Promise<void> {
+  startupIssue = null;
   if (!bridgeDesiredRunning && bridgeStopRequest) return bridgeStopRequest;
   if (!bridgeDesiredRunning && !server && !bridgeStartRequest) return;
 

@@ -20,7 +20,8 @@
  * record the app has not accepted yet.
  */
 
-const PORTS = [8765, 8766, 8767, 8768, 8769];
+// This local distribution must never pair with the legacy/upstream background service.
+const PORTS = [18775, 18776, 18777, 18778, 18779];
 const HELLO_TIMEOUT_MS = 1200;
 const REQUEST_TIMEOUT_MS = 10_000;
 /**
@@ -241,7 +242,14 @@ function load() {
 
 async function loadOnce() {
   const stored = await chrome.storage.local.get(['port', 'token', 'disconnected', 'deferredRevivals', 'commandAckOutbox']);
-  port = typeof stored.port === 'number' ? stored.port : null;
+  const foreignAuthority = stored.port != null && !PORTS.includes(stored.port);
+  if (foreignAuthority) {
+    // Credentials and pending receipts belong to the old bridge, never to this distribution.
+    stored.token = null;
+    stored.deferredRevivals = [];
+    stored.commandAckOutbox = [];
+  }
+  port = PORTS.includes(stored.port) ? stored.port : null;
   token = typeof stored.token === 'string' ? stored.token : null;
   // Deliberately in `local` rather than `session`: a choice to disconnect that a browser
   // restart undoes is not a choice, it is a delay.
@@ -261,6 +269,11 @@ async function loadOnce() {
     'discardProtectedTabs',
     'delivery'
   ]);
+  if (foreignAuthority) {
+    for (const key of Object.keys(live)) live[key] = null;
+    await chrome.storage.session.set(live);
+    await chrome.storage.local.set({ port: null, token: null, deferredRevivals: [], commandAckOutbox: [] });
+  }
   settled = Array.isArray(live.settled) ? live.settled : [];
   journal = Array.isArray(live.journal) ? live.journal : [];
   tabConversations =

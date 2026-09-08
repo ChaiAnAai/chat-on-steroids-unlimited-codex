@@ -1,5 +1,5 @@
-/** User-facing 100% is the previous 130% size; IPC exposes relative zoom only. */
-export const UI_BASE_ZOOM = 1.3;
+/** CSS pixels follow the operating system's display scale; 100% adds no extra magnification. */
+export const UI_BASE_ZOOM = 1;
 
 export interface DisplayWorkArea {
   x: number;

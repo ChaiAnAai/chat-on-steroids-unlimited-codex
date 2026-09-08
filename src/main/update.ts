@@ -47,6 +47,7 @@ import { pipeline } from 'node:stream/promises';
 import { app } from 'electron';
 import { logInfo, logWarn } from './logger.js';
 import { APP_VERSION } from './version.js';
+import { DISTRIBUTION } from '../shared/distribution.js';
 import { isNewer, type UpdateStatus } from '../shared/types.js';
 
 const REPO = 'totec448-spec/chat-on-steroids';
@@ -87,6 +88,7 @@ export function stagedArtifact(
   appImage: string | undefined = process.env.APPIMAGE,
   packaged: boolean = app.isPackaged
 ): { name: string; kind: 'installer' | 'appimage'; target: string } | null {
+  if (DISTRIBUTION.channel === 'local') return null;
   if (!packaged) return null;
   if (arch !== 'x64' && arch !== 'arm64') return null;
   if (platform === 'win32') return { name: `Chat-On-Steroids-Setup-${arch}.exe`, kind: 'installer', target: '' };
@@ -133,6 +135,7 @@ function set(next: Partial<UpdateStatus>): void {
  * alive, and the shutdown sequence does not have to know it exists.
  */
 export function startUpdateChecks(): void {
+  if (DISTRIBUTION.channel === 'local') return;
   void checkForUpdates();
   setInterval(() => void checkForUpdates(), RECHECK_MS).unref();
 }
@@ -144,6 +147,7 @@ export function startUpdateChecks(): void {
  * from downloading the same installer twice.
  */
 export function checkForUpdates(): Promise<void> {
+  if (DISTRIBUTION.channel === 'local') return Promise.resolve();
   if (pass) return pass;
   const run = runPass()
     .catch((err: Error) => {
@@ -337,6 +341,7 @@ async function download(version: string, name: string, expected: string): Promis
  * The caller quits. This module still never does.
  */
 export function markInstallOnQuit(): boolean {
+  if (DISTRIBUTION.channel === 'local') return false;
   if (!staged) return false;
   runAfterInstall = true;
   return true;
@@ -359,6 +364,7 @@ export function markInstallOnQuit(): boolean {
  * rename gives the new build a new inode and leaves the old one alive until it exits.
  */
 export async function applyStagedUpdate(): Promise<void> {
+  if (DISTRIBUTION.channel === 'local') { staged = null; runAfterInstall = false; return; }
   const ready = staged;
   const relaunch = runAfterInstall;
   staged = null;

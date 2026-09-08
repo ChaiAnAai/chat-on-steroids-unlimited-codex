@@ -12,6 +12,7 @@
  */
 
 import { getStatus, isServerRunning, tunnelHealthBase } from './connection.js';
+import { bridgeStatus } from './bridge.js';
 
 import { effectiveCapabilities, getConfig } from './config.js';
 import { logInfo, logWarn } from './logger.js';
@@ -296,6 +297,16 @@ function developerMode(seen: number | null, called: number | null): Check {
 export async function runDiagnostics(): Promise<Diagnosis> {
   const checks: Check[] = [];
   const config = getConfig();
+  if (config.sessions.record || config.multiAgent.enabled) {
+    const browser = await bridgeStatus();
+    checks.push({ name: 'Browser service', status: browser.running ? 'pass' : 'fail', ok: browser.running,
+      detail: browser.startupIssue === 'ports-unavailable'
+        ? 'Browser ports are unavailable. Close another copy of this local edition, then restart. Do not stop unrelated programs.'
+        : browser.running ? 'Browser service is running.' : 'Browser service could not start. Check Activity for the startup error.' });
+    checks.push({ name: 'Browser extension', status: browser.present ? 'pass' : 'not-run', ok: browser.present ? true : null,
+      detail: browser.present ? 'Browser connected to this app. Model availability and tool access are checked separately.'
+        : 'Load the companion from this app using Open extension folder, then open a ChatGPT tab. An extension from another edition will not connect here.' });
+  }
   const caps = effectiveCapabilities(config);
   const status = getStatus();
 

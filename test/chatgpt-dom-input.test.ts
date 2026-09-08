@@ -177,6 +177,23 @@ function picker() {
   return { container, radio: container.querySelector('[role="menuitemradio"]')!, power: container.querySelector('[aria-label="Power"]')!, description: container.querySelector('span')! };
 }
 describe('actual visible model and reasoning selection', () => {
+  it.each(['高，3/5', '高，第3项，共5项'])('reads Chinese model controls and ordinal %s without changing the model', async description => {
+    const controls = picker(); document.body.append(controls.container);
+    controls.container.querySelector('[aria-label="Select model"]')!.setAttribute('aria-label', '选择模型');
+    controls.power.setAttribute('aria-label', '思考强度');
+    controls.description.textContent = description;
+    controls.radio.setAttribute('aria-checked', 'true');
+    expect(api.visibleModelSelection()).toEqual({ model: 'GPT Example', reasoningEffort: 'high' });
+    expect(await api.selectModelSettings('gpt-example', 'high')).toBe(true);
+    controls.description.textContent = `${description}。需要升级`;
+    expect(await api.selectModelSettings('gpt-example', 'high')).toBe(false);
+  });
+  it('refuses an unrecognized Chinese reasoning label instead of guessing from its ordinal', () => {
+    const controls = picker(); document.body.append(controls.container);
+    controls.radio.setAttribute('aria-checked', 'true');
+    controls.description.textContent = '未知级别，3/5';
+    expect(api.visibleModelSelection()).toEqual({ model: 'GPT Example' });
+  });
   it('recognizes only the visible provider access-limit dialog as a blocking nontransport error', () => {
     const notice = document.createElement('div');
     notice.innerHTML = '<h2>Too many requests</h2><p>We have temporarily limited access to conversations to protect your data. Please wait a few minutes.</p>';

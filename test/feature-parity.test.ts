@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultConfig } from '../src/main/config.js';
 import { surfaceDefinition, surfaceIsUseful } from '../src/main/mcp/surfaces.js';
 import { browserExtensionRequired } from '../src/shared/types.js';
+import { DISTRIBUTION } from '../src/shared/distribution.js';
 
 describe('portable browser-backed feature parity', () => {
   it.each(['win32', 'darwin', 'linux'] as const)(
@@ -80,11 +81,7 @@ describe('portable browser-backed feature parity', () => {
     expect(manifest.host_permissions).toEqual(
       expect.arrayContaining([
         'https://chatgpt.com/*',
-        'http://127.0.0.1:8765/*',
-        'http://127.0.0.1:8766/*',
-        'http://127.0.0.1:8767/*',
-        'http://127.0.0.1:8768/*',
-        'http://127.0.0.1:8769/*'
+        ...DISTRIBUTION.bridgePorts.map(port => `http://127.0.0.1:${port}/*`)
       ])
     );
   });

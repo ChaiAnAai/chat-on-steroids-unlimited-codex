@@ -1,4 +1,6 @@
 import { REASONING_EFFORTS } from '../src/shared/session.js';
+import { defaultAppearance } from '../src/shared/appearance.js';
+import { LANGUAGE_CODES } from '../src/shared/languages.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -25,6 +27,32 @@ afterAll(async () => {
 });
 
 describe('settings migration', () => {
+  it('persists every supported interface language', async () => {
+    for (const language of LANGUAGE_CODES) {
+      const config = defaultConfig(); config.ui.language = language;
+      await saveConfig(config);
+      expect((await loadConfig()).ui.language).toBe(language);
+    }
+  });
+  it('round trips customized appearance and accepts legacy profiles without it', async () => {
+    const config = defaultConfig();
+    config.ui.appearance = { ...defaultAppearance(), textSize: 18, accent: '#31a475', density: 'compact' };
+    await saveConfig(config);
+    expect((await loadConfig()).ui.appearance).toEqual(config.ui.appearance);
+    delete config.ui.appearance;
+    await saveConfig(config);
+    expect((await loadConfig()).ui.appearance).toBeUndefined();
+  });
+  it('persists the interface language across reloads and defaults legacy settings to English', async () => {
+    for (const language of ['zh-CN', 'en'] as const) {
+      const config = defaultConfig(); config.ui.language = language;
+      await saveConfig(config);
+      expect((await loadConfig()).ui.language).toBe(language);
+    }
+    const legacy = defaultConfig(); delete legacy.ui.language;
+    await saveConfig(legacy);
+    expect((await loadConfig()).ui.language).toBe('en');
+  });
   it('defaults Goal and Loop to ChatGPT while preserving explicit backend choices', async () => {
     expect(defaultConfig().goal).toMatchObject({ backend: 'chatgpt', loopBackend: 'chatgpt' });
     for (const backend of ['api', 'templates', 'chatgpt'] as const) {

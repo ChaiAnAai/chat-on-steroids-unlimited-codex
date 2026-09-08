@@ -20,6 +20,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawned: Array<{ file: string; args: string[] }> = [];
+vi.mock('../src/shared/distribution.js', () => ({ DISTRIBUTION: { channel: 'upstream' } }));
 vi.mock('node:child_process', () => ({
   spawn: (file: string, args: string[]) => {
     spawned.push({ file, args });

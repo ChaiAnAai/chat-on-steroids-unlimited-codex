@@ -2,6 +2,7 @@ import type { Config } from '../shared/types.js';
 import type { SessionSummary } from '../shared/session.js';
 import type { ReasoningEffort } from '../shared/session.js';
 import { isProModel } from '../shared/chat-models.js';
+import { ui, translate } from './i18n.js';
 
 /** Recorder estimates, never a claim about the provider's exact context window. */
 export function paintContextMeter(session: SessionSummary | null, config: Config, composer: { model: string; reasoningEffort: ReasoningEffort } | null = null): void {
@@ -19,9 +20,10 @@ export function paintContextMeter(session: SessionSummary | null, config: Config
   const percent = limit > 0 ? Math.min(100, Math.round(used / limit * 100)) : 0;
   arc.setAttribute('stroke-dasharray', `${pro ? 0 : percent * 0.377} 37.7`);
   const tokens = new Intl.NumberFormat().format(used);
+  const copy = ui();
   panel.textContent = pro
-    ? `Session context · estimated\n${tokens} tokens used\nAuto-compaction off for Pro`
-    : `Session context · estimated\n${tokens} / ${new Intl.NumberFormat().format(limit)} tokens · ${percent}% of configured limit\n${config.compaction.auto ? `Auto-compaction at ${new Intl.NumberFormat().format(config.compaction.autoTokens)} tokens` : 'Auto-compaction off'}`;
+    ? `${copy.sessionContextEstimated}\n${translate('{tokens} tokens used', { tokens })}\n${translate('Auto-compaction off for Pro')}`
+    : `${copy.sessionContextEstimated}\n${translate('{tokens} / {limit} tokens · {percent}% of configured limit', { tokens, limit: new Intl.NumberFormat().format(limit), percent })}\n${config.compaction.auto ? translate('Auto-compaction at {tokens} tokens', { tokens: new Intl.NumberFormat().format(config.compaction.autoTokens) }) : copy.autoCompactOff}`;
   button.setAttribute('aria-label', panel.textContent.replaceAll('\n', '. '));
 }
 

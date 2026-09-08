@@ -321,6 +321,10 @@ describe('session store', () => {
         if (file.endsWith('meta.json') && id.startsWith('catalog-')) {
           return JSON.stringify({
             ...seedSummary,
+            // This fixture describes a current empty checkpoint, not 5,001 corrupt
+            // metadata files requiring durable repair against nonexistent directories.
+            __historySeq: 0,
+            __canonicalProjection: 1,
             id,
             title: id,
             conversationId: id === targetId ? conversationId : null,
@@ -1599,6 +1603,8 @@ describe('handoff storage', () => {
         if (file.endsWith('meta.json') && id.startsWith('handoff-')) {
           return JSON.stringify({
             ...seedSummary,
+            __historySeq: 0,
+            __canonicalProjection: 1,
             id,
             title: id,
             updatedAt: id === targetId ? 20_000 : 10_000,

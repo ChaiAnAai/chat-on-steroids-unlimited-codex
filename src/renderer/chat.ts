@@ -1,3 +1,8 @@
+import { taskMenu, initTaskMenus } from './task-menu.js';
+import { translate } from './i18n.js';
+import { browserConnectionGuide } from './connection-guide.js';
+import { workflowDraft, type Workflow } from './project-workflows.js';
+import { createWorkspace, taskMatches } from './workspace.js';
 import { applyChatModels, applyComposerSessionModel, initChatModels, confirmedComposerModel } from './chat-models.js';
 import { marked } from 'marked';
 import { createAgentPanel } from './agent-panel.js';
@@ -119,6 +124,15 @@ let pendingNewInput: { id: string; generation: number } | null = null;
 let agentPanel: ReturnType<typeof createAgentPanel> | null = null;
 const expandedWorkers = new Set<string>();
 const inputDrafts = new Map<string, string>();
+let workspace: ReturnType<typeof createWorkspace> | null = null;
+const taskViews = new Map<string, { scroll: number; before: number | null; open: Set<string> }>();
+function paintWorkspace(): void {
+  const summary = sessions.find(session => session.id === selectedId) ?? null;
+  workspace?.update({ summary, project: projects.find(project => project.id === selectedProjectId),
+    events: detailFor === selectedId ? events : [], total: totalEvents, state: deps.state(),
+    working: !!summary && (sessionWorking(summary) || (controlledSessionId === selectedId && controlledSelection === selectionGeneration && controlledTurnId !== null)),
+    waiting: controlledSessionId === selectedId && controlledSelection === selectionGeneration && controlledFinishWaiting });
+}
 const imageDrafts = new Map<string, InputImage[]>();
 const startingInputs = new Map<string, InputEntry>();
 const visibleInputIds = new Set<string>();
@@ -138,7 +152,10 @@ function dismissInputNotice(id: string): void {
   catch { /* A storage failure still allows dismissal for this window lifetime. */ }
   void refreshInputQueue();
 }
-function rememberDraft(): void { inputDrafts.set(draftKey(), $<HTMLTextAreaElement>('chatInput').value); }
+function rememberDraft(): void {
+  inputDrafts.set(draftKey(), $<HTMLTextAreaElement>('chatInput').value);
+  if (selectedId && detailFor === selectedId) taskViews.set(selectedId, { scroll: $('chatBody').scrollTop, before: historyBefore, open: new Set(openTools) });
+}
 function restoreDraft(): void { cancelGoalRequest(); cancelTaskPlan(); $('taskPlanPreview').hidden = true; $('taskPlanPreview').replaceChildren(); $('activeGoalRow').hidden = true; $('recoveryStatus').hidden = true; $<HTMLTextAreaElement>('chatInput').value = inputDrafts.get(draftKey()) ?? ''; const automation = $<HTMLSelectElement>('chatAutomation'); automation.value = 'off'; delete automation.dataset.edited; $<HTMLTextAreaElement>('sessionObjective').value = ''; delete $('sessionObjective').dataset.edited; delete $('sessionObjective').dataset.sessionId; paintComposerImages(); }
 function paintComposerImages(): void {
   const key = draftKey();
@@ -334,14 +351,16 @@ function sessionBadges(summary: SessionSummary): Badge[] {
 function sessionRow(summary: SessionSummary): HTMLElement {
   const row = el('div', 'sess');
   row.dataset.id = summary.id;
+  row.tabIndex = 0; row.setAttribute('role', 'button'); row.setAttribute('aria-current', String(summary.id === selectedId));
+  row.addEventListener('keydown', event => { if (event.target === row && ['Enter', ' '].includes(event.key)) { event.preventDefault(); selectSession(summary.id); } });
   if (summary.id === selectedId) row.classList.add('is-sel');
   if (summary.id === activeId && summary.endedAt === null) row.classList.add('is-live');
 
   const top = el('div', 'sess-top');
-  const title = el('b', '', summary.title || 'Untitled session');
+  const title = el('b', '', workspace?.label(summary) ?? (summary.title || translate("Untitled session")));
   top.append(title);
   const badges = sessionBadges(summary);
-  row.title = [summary.title || 'Untitled session', ...badges.map((badge) => badge.text), ago(summary.updatedAt)].join(' · ');
+  row.title = [summary.title || translate("Untitled session"), ...badges.map((badge) => badge.text), ago(summary.updatedAt)].join(' · ');
   const showTip = () => {
     document.getElementById('sessionTooltip')?.remove();
     const tip = el('div', 'session-tooltip', row.title);
@@ -362,11 +381,18 @@ function sessionRow(summary: SessionSummary): HTMLElement {
     top.append(indicator);
   }
   const actionBar = el('div', 'sess-actions');
+  if (summary.conversationId) {
+    const pinned = workspace?.presentation.pins.includes(summary.id) === true;
+    const pin = el('button', `btn sess-action sess-pin${pinned ? ' is-pinned' : ''}`, pinned ? '★' : '☆') as HTMLButtonElement;
+    pin.type = 'button'; pin.title = translate(pinned ? 'Unpin task' : 'Pin task'); pin.setAttribute('aria-label', pin.title);
+    pin.addEventListener('click', event => { event.stopPropagation(); workspace?.pin(summary.id); });
+    actionBar.append(pin);
+  }
 
   const remove = document.createElement('button');
   remove.className = 'btn sess-action sess-del';
   remove.type = 'button';
-  remove.title = 'Delete this recorded session';
+  remove.title = translate("Delete this recorded session");
   remove.append(icon('i-trash'));
   remove.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -393,6 +419,7 @@ function sessionRow(summary: SessionSummary): HTMLElement {
     actions.push(block);
 
     actionBar.append(...actions, remove);
+  taskMenu(row, actionBar);
     row.append(top, actionBar);
     return row;
   }
@@ -417,7 +444,7 @@ function sessionRow(summary: SessionSummary): HTMLElement {
     const open = document.createElement('button');
     open.className = 'btn sess-action sess-open';
     open.type = 'button';
-    open.title = 'Open this chat in Chrome';
+    open.title = translate("Open this chat in Chrome");
     open.append(icon('i-out'));
     open.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -427,6 +454,7 @@ function sessionRow(summary: SessionSummary): HTMLElement {
   }
 
   actionBar.append(...actions, remove);
+  taskMenu(row, actionBar);
   row.append(top, actionBar);
   return row;
 }
@@ -553,6 +581,9 @@ let diagnosticsExpanded = false;
 function paintSessions(): void {
   document.getElementById('sessionTooltip')?.remove();
   const list = $('sessionList');
+  const query = $<HTMLInputElement>('taskSearch').value;
+  const matching = (entry: SessionSummary) => !workspace || taskMatches(entry, projects.find(project => project.id === entry.projectId), query, workspace.presentation);
+  const pinnedRows: HTMLElement[] = [];
   const children = new Map<string, SessionSummary[]>();
   const ids = new Set(sessions.map((entry) => entry.id));
   for (const entry of sessions) {
@@ -577,17 +608,19 @@ function paintSessions(): void {
   };
   for (const entry of sessions) {
     if (entry.origin?.kind === 'worker') continue;
+    if (!matching(entry) && !(children.get(entry.id)?.some(matching))) continue;
     if (!entry.conversationId) { diagnostics.push(entry); continue; }
-    const target: HTMLElement[] = entry.projectId ? [] : rows;
+    const pinned = workspace?.presentation.pins.includes(entry.id) === true;
+    const target: HTMLElement[] = pinned ? pinnedRows : entry.projectId ? [] : rows;
     const row = sessionRow(entry); target.push(row);
     const workers = children.get(entry.id); if (workers) group(entry.id, workers, row, target);
-    if (entry.projectId) {
+    if (entry.projectId && !pinned) {
       const tasks = projectRows.get(entry.projectId) ?? [];
       tasks.push({ rows: target, selected: entry.id === selectedId || workers?.some(worker => worker.id === selectedId) === true });
       projectRows.set(entry.projectId, tasks);
     }
   }
-  const otherWorkers = children.get('other-workers') ?? [];
+  const otherWorkers = (children.get('other-workers') ?? []).filter(matching);
   if (otherWorkers.length) {
     const history = document.createElement('details'); history.className = 'session-diagnostics';
     history.open = expandedWorkers.has('other-workers');
@@ -600,16 +633,17 @@ function paintSessions(): void {
   const projectSections: HTMLElement[] = [];
   for (const id of projectIds) {
     const project = projects.find(row => row.id === id);
+    if (query.trim() && !projectRows.has(id)) continue;
     const section = document.createElement('details'); section.className = 'project-group'; section.dataset.projectId = id;
-    section.open = !collapsedProjects.has(id);
+    section.open = !!query.trim() || !collapsedProjects.has(id);
     const heading = el('summary', 'project-heading');
-    const label = el('span', 'project-name', project?.name ?? 'Unavailable project');
-    heading.title = project?.path ?? 'Unavailable project';
+    const label = el('span', 'project-name', project?.name ?? translate("Unavailable project"));
+    heading.title = project?.path ?? translate("Unavailable project");
     heading.append(icon('i-folder'), label); section.append(heading);
-    section.addEventListener('toggle', () => { if (section.isConnected) section.open ? collapsedProjects.delete(id) : collapsedProjects.add(id); });
+    section.addEventListener('toggle', () => { if (section.isConnected && !query.trim()) { section.open ? collapsedProjects.delete(id) : collapsedProjects.add(id); workspace?.collapse(id, !section.open); } });
     if (project) {
       const create = el('button', 'btn project-new'); create.append(icon('i-plus')); create.setAttribute('type', 'button'); create.dataset.newProject = id;
-      create.title = 'New chat in this project'; create.setAttribute('aria-label', create.title);
+      create.title = translate("New chat in this project"); create.setAttribute('aria-label', create.title);
       create.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); selectNewChat(id); }); heading.append(create);
     }
     const tasks = projectRows.get(id) ?? [];
@@ -634,18 +668,21 @@ function paintSessions(): void {
     rows.push(disclosure);
   }
   // Projects must remain discoverable without scrolling through the entire ungrouped history.
-  list.replaceChildren(...projectSections, ...rows);
+  const pinnedHeading = pinnedRows.length ? [el('h3', 'task-list-heading', translate('Pinned')), ...pinnedRows] : [];
+  list.replaceChildren(...pinnedHeading, ...projectSections, ...(rows.length ? [el('h3', 'task-list-heading', translate('Recent tasks')), ...rows] : []));
+  const noResults = $('taskSearchStatus'); noResults.hidden = !query.trim() || !!list.childElementCount;
+  noResults.textContent = translate('No matching tasks in loaded history.');
   agentPanel?.update(selectedId, sessions.filter(entry => entry.origin?.kind === 'worker' && entry.origin.fromSessionId === selectedId && selectedId !== null));
   badgeKey = badgeSignature();
   $('sessionsEmpty').hidden = sessions.length > 0 || projects.length > 0;
 
   const recording = deps.state()?.config.sessions.record === true;
-  const retained = `${sessionTotal} retained session${sessionTotal === 1 ? '' : 's'}`;
-  const shown = sessions.length < sessionTotal ? `${sessions.length} of ${retained} shown` : retained;
-  const more = sessionPageCursor && sessions.length < sessionTotal ? ' · scroll for older history' : '';
+  const retained = translate('{count} recorded tasks', { count: sessionTotal });
+  const shown = sessions.length < sessionTotal ? translate('{shown} of {total} tasks loaded', { shown: sessions.length, total: sessionTotal }) : retained;
+  const more = sessionPageCursor && sessions.length < sessionTotal ? ` · ${translate('Scroll for older history')}` : '';
   $('sessionsFoot').textContent = recording
-    ? `${shown}${more}${activeId ? ' · one live now' : ''}`
-    : `Recording is off · ${shown}${more}`;
+    ? `${shown}${more}`
+    : `${translate('Recording is off')} · ${shown}${more}`;
   scheduleToolActivityExpiry();
 }
 
@@ -758,14 +795,14 @@ function paintDeliveryControls(): void {
   const queueAtFinish = selectedId !== null && controlledSessionId === selectedId && controlledSelection === selectionGeneration && controlledQueueAtFinish;
   const canInject = selectedId !== null && controlledSessionId === selectedId && controlledSelection === selectionGeneration && controlledCanInject;
   $('queueAtFinish').hidden = !queueAtFinish;
-  $('afterTurnLabel').textContent = queueAtFinish ? 'Queue at Session finish' : 'After this turn';
+  $('afterTurnLabel').textContent = queueAtFinish ? translate("Queue at Session finish") : translate("After this turn");
   const generate = $<HTMLButtonElement>('generateFinishGoal');
   const queued = [...startingInputs.values(), ...pendingComposerInputs].some(entry =>
     (entry.sessionId ?? entry.deliveredSessionId) === selectedId && ['queued', 'browser', 'tool'].includes(entry.state));
   generate.hidden = !working || !controlledFinishWaiting || queued || controlledStopPending || !!finishGoalDraftView;
   generate.disabled = generate.dataset.busy === `${selectedId}:${controlledTurnId}`;
   const sendOption = $<HTMLSelectElement>('sendMode').querySelector('option[value="auto"]');
-  if (sendOption) sendOption.textContent = canInject ? 'Inject now' : 'Send';
+  if (sendOption) sendOption.textContent = translate(canInject ? 'Inject now' : 'Send');
   if (!canInject && !queueAtFinish) $<HTMLSelectElement>('sendMode').value = 'auto';
   const pending = pendingComposerInput();
   const stop = (working || !!pending) && !$<HTMLTextAreaElement>('chatInput').value.trim() && !(imageDrafts.get(draftKey())?.length);
@@ -775,11 +812,11 @@ function paintDeliveryControls(): void {
   const send = $<HTMLButtonElement>('chatSend');
   send.disabled = !!preparedPlan && (preparedPlan.sending || preparedPlan.stages.some(stage => !stage.trim()));
   send.dataset.action = stop ? 'stop' : 'send';
-  send.setAttribute('aria-label', stop ? (controlledStopPending ? 'Stop requested' : 'Stop turn') : 'Send message');
-  if (stop && !working && pending) send.setAttribute('aria-label', 'Cancel delivery');
-  if (preparedPlan && !stop) send.setAttribute('aria-label', 'Send first stage');
+  send.setAttribute('aria-label', stop ? (controlledStopPending ? translate("Stop requested") : translate("Stop turn")) : translate("Send message"));
+  if (stop && !working && pending) send.setAttribute('aria-label', translate("Cancel delivery"));
+  if (preparedPlan && !stop) send.setAttribute('aria-label', translate("Send first stage"));
   send.classList.toggle('is-plan-ready', !!preparedPlan && !stop);
-  send.title = stop && !working && pending ? 'Cancel delivery' : preparedPlan && !stop ? 'Send first stage' : '';
+  send.title = stop && !working && pending ? translate("Cancel delivery") : preparedPlan && !stop ? translate("Send first stage") : '';
   send.classList.toggle('is-stop', stop);
   for (const button of $('sendOptions').querySelectorAll<HTMLElement>('[data-delivery]')) {
     button.setAttribute('aria-checked', String(button.dataset.delivery === $<HTMLSelectElement>('sendMode').value));
@@ -814,20 +851,20 @@ function cancelTaskPlan(): void {
   $('taskPlanPreview').hidden = true; $('taskPlanPreview').replaceChildren();
   const button = $<HTMLButtonElement>('createPlan');
   delete button.dataset.busy; button.removeAttribute('aria-busy');
-  $<HTMLTextAreaElement>('chatInput').placeholder = 'Ask anything…';
+  $<HTMLTextAreaElement>('chatInput').placeholder = translate("Ask anything…");
   paintTaskActions();
   paintDeliveryControls();
 }
 async function createTaskPlan(backend: 'api' | 'chatgpt'): Promise<void> {
   const input = $<HTMLTextAreaElement>('chatInput'), text = input.value.trim();
   planMode = true; paintTaskActions();
-  if (!text) { input.placeholder = 'Describe the task to turn into a plan…'; input.focus(); return; }
+  if (!text) { input.placeholder = translate("Describe the task to turn into a plan…"); input.focus(); return; }
   const generation = ++planGeneration, selection = selectionGeneration;
   const preview = $('taskPlanPreview'); preview.hidden = false;
-  preview.replaceChildren(el('span', 'muted', 'Creating plan…'));
+  preview.replaceChildren(el('span', 'muted', translate("Creating plan…")));
   const button = $<HTMLButtonElement>('createPlan');
   const caption = button.querySelector('span')!; const previous = caption.textContent;
-  button.dataset.busy = 'true'; button.setAttribute('aria-busy', 'true'); caption.textContent = 'Creating plan…'; paintTaskActions();
+  button.dataset.busy = 'true'; button.setAttribute('aria-busy', 'true'); caption.textContent = translate("Creating plan…"); paintTaskActions();
   const requestId = crypto.randomUUID();
   if (planRequestId) void api.cancelTaskRequest?.(planRequestId);
   planRequestId = requestId;
@@ -879,7 +916,7 @@ function paintPreparedPlan(): void {
       if (plan.stages.length) { paintPreparedPlan(); paintDeliveryControls(); } else cancelTaskPlan();
     });
     edit.disabled = remove.disabled = field.disabled = plan.sending;
-    heading.title = index === 0 ? 'Send starts this stage. Remaining stages arrive one at a time at Session finish or after a completed answer.' : 'Delivered at Session finish or after a completed answer, following the preceding stage.';
+    heading.title = index === 0 ? translate("Send starts this stage. Remaining stages arrive one at a time at Session finish or after a completed answer.") : translate("Delivered at Session finish or after a completed answer, following the preceding stage.");
     heading.append(label, text, edit, remove); row.append(heading, field, error); return row;
   }));
 }
@@ -906,14 +943,14 @@ function paintTaskActions(): void {
   save.hidden = off;
   const saved = objective.dataset.saved === objective.value && !!objective.value.trim();
   save.disabled = objective.disabled || !objective.value.trim() || save.dataset.busy === 'true' || saved;
-  save.querySelector('span')!.textContent = save.dataset.busy === 'true' ? 'Saving…' : saved ? 'Saved' : 'Save task';
+  save.querySelector('span')!.textContent = translate(save.dataset.busy === 'true' ? 'Saving…' : saved ? 'Saved' : 'Save task');
   const text = $<HTMLTextAreaElement>('chatInput').value.trim();
   for (const id of ['createPlan']) {
     const button = $<HTMLButtonElement>(id);
     button.disabled = false;
     button.setAttribute('aria-pressed', String(planMode));
-    button.querySelector('span')!.textContent = planMode ? 'Cancel plan' : 'Create plan';
-    button.title = planMode ? 'Return to a normal message; keep your draft' : text ? 'Split your message into editable stages' : 'Write a message in the composer first';
+    button.querySelector('span')!.textContent = planMode ? translate("Cancel plan") : translate("Create plan");
+    button.title = planMode ? translate("Return to a normal message; keep your draft") : text ? translate("Split your message into editable stages") : translate("Write a message in the composer first");
   }
 }
 function paintAutomationSwitch(): void {
@@ -926,8 +963,8 @@ function paintAutomationSwitch(): void {
   }
   $<HTMLSelectElement>('sessionObjectiveMode').value = select.value === 'loop' ? 'loop' : 'goal';
   const loop = select.value === 'loop';
-  document.querySelector('label[for="sessionObjective"]')!.textContent = loop ? 'Loop instructions' : 'Goal';
-  $<HTMLTextAreaElement>('sessionObjective').placeholder = loop ? 'What should each continuation focus on?' : 'What should this chat achieve?';
+  document.querySelector('label[for="sessionObjective"]')!.textContent = translate(loop ? 'Loop instructions' : 'Goal');
+  $<HTMLTextAreaElement>('sessionObjective').placeholder = loop ? translate("What should each continuation focus on?") : translate("What should this chat achieve?");
   paintTaskActions();
 }
 async function refreshSessionControls(): Promise<void> {
@@ -970,7 +1007,7 @@ async function refreshSessionControls(): Promise<void> {
   paintAutomationSwitch();
   $<HTMLButtonElement>('compactSession').disabled = !!controls.blocked || !!controls.job?.busy;
   $('cancelCompaction').hidden = !controls.job?.busy;
-  $('sessionControlStatus').textContent = controls.blocked === 'worker' ? 'This sub-agent is managed by its prime.' : controls.blocked === 'blocked' ? 'This chat is blocked.' : controls.job?.busy ? 'Compaction is running in ChatGPT.' : '';
+  $('sessionControlStatus').textContent = controls.blocked === 'worker' ? translate("This sub-agent is managed by its prime.") : controls.blocked === 'blocked' ? translate("This chat is blocked.") : controls.job?.busy ? translate("Compaction is running in ChatGPT.") : '';
 }
 
 async function navigateHistory(before: number | null, prepend = false): Promise<void> {
@@ -999,7 +1036,8 @@ async function loadDetail(navigate = false, prepend = false): Promise<void> {
     paintDetail();
     return;
   }
-  if (detailFor !== wanted) historyBefore = null;
+  const returning = detailFor !== wanted ? taskViews.get(wanted) : undefined;
+  if (detailFor !== wanted) historyBefore = returning?.before ?? null;
   // Live deltas must not evict a historical page while the user is reading it.
   const incremental = historyBefore === null && detailFor === wanted && detailCursor !== null;
   const detail = await run(
@@ -1032,6 +1070,7 @@ async function loadDetail(navigate = false, prepend = false): Promise<void> {
       : detail.events.reduce((cursor, event) => Math.max(cursor, event.seq + 1), incremental ? detailCursor! : 0);
   totalEvents = detail.total;
   paintDetail();
+  if (returning) $('chatBody').scrollTop = returning.scroll;
   void loadHandoff();
   // A burst can contain more than one renderer-sized page between coalesced notifications.
   // Drain it page by page rather than silently jumping the cursor or lifting the payload cap.
@@ -1215,7 +1254,7 @@ function forgetTimelineRows(): void {
   rowCache.clear();
 }
 
-function toolBody(event: Extract<SessionEvent, { kind: 'tool_call' }>): HTMLElement {
+function toolBody(event: Extract<SessionEvent, { kind: 'tool_call' }>, allowInspector = true): HTMLElement {
   const { call } = event;
   const box = document.createElement('details');
   box.className = `tool tone-${call.summary.tone}`;
@@ -1255,6 +1294,10 @@ function toolBody(event: Extract<SessionEvent, { kind: 'tool_call' }>): HTMLElem
   raw.append(textBlock('pre', call.args.text, call.args.truncated, call.args.chars));
   raw.append(el('h4', '', 'Result'));
   raw.append(textBlock('pre', call.result.text, call.result.truncated, call.result.chars));
+  if (allowInspector && (['run', 'process', 'edit', 'create', 'delete', 'move'].includes(call.summary.kind) || call.changes?.length)) {
+    const inspect = el('button', 'btn', translate('Open in details')) as HTMLButtonElement;
+    inspect.type = 'button'; inspect.addEventListener('click', () => workspace?.inspect(event)); raw.append(inspect);
+  }
 
   for (const asset of call.assets ?? []) {
     raw.append(el('p', 'raw-facts', `asset ${asset.id} · ${asset.mimeType} · ${compactNumber(asset.bytes)} bytes`));
@@ -1336,12 +1379,12 @@ function eventBody(event: SessionEvent, context?: { id: string; current: () => b
     case 'chat_error': {
       const notice = el('div', 'chat-error-notice');
       notice.setAttribute('role', 'status');
-      const title = el('strong', '', 'ChatGPT reported a problem');
+      const title = el('strong', '', translate("ChatGPT reported a problem"));
       notice.append(title, textBlock('msg', event.message.text, event.message.truncated, event.message.chars));
       return notice;
     }
     case 'tool_call':
-      return toolBody(event);
+      return toolBody(event, !context || context.id === selectedId);
     case 'note':
       return el('p', 'meta', event.message.text);
     /**
@@ -1846,7 +1889,8 @@ function paintDetail(): void {
   applyComposerSessionModel(selectedId ? `${selectedId}:${selectionGeneration}` : null, summary?.selectedModel ?? null);
   const config = deps.state()?.config;
   if (config) paintContextMeter(summary, config, confirmedComposerModel());
-  $('chatTitle').textContent = summary ? summary.title || 'Untitled session' : 'New chat';
+  $('chatTitle').textContent = summary ? summary.title || translate("Untitled session") : translate("New chat");
+  paintWorkspace();
 
   paintDeliveryControls();
   paintAgentFilter();
@@ -1978,6 +2022,7 @@ function paintStateLine(): void {
   note.classList.toggle('is-working', text.startsWith('Working'));
   if (visible && text.startsWith('Working for ')) durationTimer = window.setTimeout(paintStateLine, 1000);
   repaintBadges();
+  paintWorkspace();
 }
 
 /**
@@ -2057,18 +2102,16 @@ function stateLine(): { text: string; tone: '' | 'is-live' | 'is-bad' } {
  * that cannot be followed. Asked once and cached, because the answer cannot change while
  * the app is running.
  */
-let extensionPathShown = false;
+let extensionPathRequest: Promise<string | null> | null = null;
 async function showExtensionPath(): Promise<void> {
-  if (extensionPathShown) return;
-  extensionPathShown = true;
-  const dir = await run(api.extensionPath());
+  const dir = await (extensionPathRequest ??= run(api.extensionPath()));
   const node = $('extensionPath');
   if (dir) {
-    node.textContent = `Extension folder: ${dir}`;
+    node.textContent = translate('Extension folder: {path}', { path: dir });
     node.classList.remove('is-warn');
   } else {
     node.textContent =
-      'The extension folder is missing from this installation. Reinstall the app, or use the extension/ folder from a source checkout.';
+      translate('The extension folder is missing from this installation. Reinstall the app, or use the extension/ folder from a source checkout.');
     node.classList.add('is-warn');
     $<HTMLButtonElement>('bridgeFolder').disabled = true;
   }
@@ -2240,14 +2283,14 @@ async function loadGoalModels(reset: boolean): Promise<void> {
     goalModels = [];
     goalTotal = 0;
   }
-  $('goalModelsState').textContent = 'Loading models from OpenRouter…';
+  $('goalModelsState').textContent = translate("Loading models from OpenRouter…");
   $<HTMLButtonElement>('goalMore').disabled = true;
   const page = await run(api.listGoalModels(goalModels.length));
   goalLoading = false;
   if (!page) {
     // `run` has already shown the reason. Say what it means *here*: the list is empty and
     // the model in use has not changed.
-    $('goalModelsState').textContent = 'OpenRouter could not be reached. The model in use is unchanged.';
+    $('goalModelsState').textContent = translate("OpenRouter could not be reached. The model in use is unchanged.");
     $<HTMLButtonElement>('goalMore').disabled = goalModels.length === 0;
     return;
   }
@@ -2326,7 +2369,7 @@ function applyGoal(state: AppState, previous?: Config): void {
   applyChatChecked($<HTMLInputElement>('goalIncludeToolCalls'), config.goal.includeToolCalls === true, previous?.goal.includeToolCalls);
   const automation = $<HTMLSelectElement>('chatAutomation');
   automation.disabled = !config.sessions.record;
-  automation.title = config.sessions.record ? 'Continue this chat automatically' : 'Enable session recording to use Goal or Loop';
+  automation.title = config.sessions.record ? translate("Continue this chat automatically") : translate("Enable session recording to use Goal or Loop");
   paintAutomationSwitch();
   const secureStorageAvailable = state.secureStorage?.available ?? true;
   goalModel = config.goal.model;
@@ -2347,7 +2390,7 @@ function applyGoal(state: AppState, previous?: Config): void {
   goalKey.placeholder = state.hasGoalKey ? '•••••••• stored' : 'sk-or-v1-…';
   goalKey.disabled = !secureStorageAvailable;
   $('goalKeyState').textContent = !secureStorageAvailable
-    ? (state.secureStorage?.detail ?? 'Secure credential storage is unavailable.')
+    ? (state.secureStorage?.detail ?? translate("Secure credential storage is unavailable."))
     : state.hasGoalKey
       ? 'A key is stored with secure OS credential storage. Type a new one to replace it.'
       : 'Stored with secure OS credential storage. It never leaves this app, and the browser is only ever handed the reply.';
@@ -2361,7 +2404,7 @@ function wireGoal(save: () => Promise<void>): void {
   $('goalPromptEdit').addEventListener('click', () => {
     const panel = $('goalPromptPanel');
     panel.hidden = !panel.hidden;
-    $('goalPromptEdit').textContent = panel.hidden ? 'Edit prompt' : 'Close prompt';
+    $('goalPromptEdit').textContent = panel.hidden ? translate("Edit prompt") : translate("Close prompt");
     if (!panel.hidden) $<HTMLTextAreaElement>('goalPrompt').focus();
   });
   $('goalPromptReset').addEventListener('click', async () => {
@@ -2373,7 +2416,7 @@ function wireGoal(save: () => Promise<void>): void {
   $('goalObjectivePromptEdit').addEventListener('click', () => {
     const panel = $('goalObjectivePromptPanel');
     panel.hidden = !panel.hidden;
-    $('goalObjectivePromptEdit').textContent = panel.hidden ? 'Edit prompt' : 'Close prompt';
+    $('goalObjectivePromptEdit').textContent = panel.hidden ? translate("Edit prompt") : translate("Close prompt");
     if (!panel.hidden) $<HTMLTextAreaElement>('goalObjectivePrompt').focus();
   });
   $('goalObjectivePromptReset').addEventListener('click', async () => {
@@ -2385,7 +2428,7 @@ function wireGoal(save: () => Promise<void>): void {
   $('goalLoopPromptEdit').addEventListener('click', () => {
     const panel = $('goalLoopPromptPanel');
     panel.hidden = !panel.hidden;
-    $('goalLoopPromptEdit').textContent = panel.hidden ? 'Edit prompt' : 'Close prompt';
+    $('goalLoopPromptEdit').textContent = panel.hidden ? translate("Edit prompt") : translate("Close prompt");
     if (!panel.hidden) $<HTMLTextAreaElement>('goalLoopPrompt').focus();
   });
   $('goalLoopPromptReset').addEventListener('click', async () => {
@@ -2398,7 +2441,7 @@ function wireGoal(save: () => Promise<void>): void {
   $('goalPick').addEventListener('click', () => {
     const panel = $('goalModels');
     panel.hidden = !panel.hidden;
-    $('goalPick').textContent = panel.hidden ? 'Select model' : 'Close';
+    $('goalPick').textContent = panel.hidden ? translate("Select model") : 'Close';
     if (!panel.hidden && goalModels.length === 0) void loadGoalModels(true);
   });
   $('goalMore').addEventListener('click', () => void loadGoalModels(false));
@@ -2532,10 +2575,19 @@ export function chatApply(state: AppState, previous?: Config): void {
               bridge.lastSeenAt === null ? 'It has not checked in since this app started.' : `Last seen ${ago(bridge.lastSeenAt)}.`
             }`
           : `Listening on 127.0.0.1:${bridge.port ?? '?'} · no browser is authorized or connected yet.`;
+  if (browserRequired && secureStorageAvailable) $('bridgeState').textContent = browserConnectionGuide(state);
   $('bridgeState').classList.toggle('is-warn', browserRequired && (!bridge.present || !secureStorageAvailable));
   void showExtensionPath();
 
-  if (sessions.length > 0) paintSessions();
+  if (sessions.length > 0 || previous?.ui.language !== config.ui.language) paintSessions();
+  if (previous?.ui.language !== config.ui.language) {
+    paintDeliveryControls();
+    const input = $<HTMLTextAreaElement>('chatInput');
+    input.placeholder = planMode ? translate('Describe the task to turn into a plan…') : translate('Ask anything…');
+    const summary = sessions.find(session => session.id === selectedId);
+    $('chatTitle').textContent = summary?.title || translate(summary ? 'Untitled session' : 'New chat');
+  }
+  paintWorkspace();
 }
 
 /** Called when the Chat tab becomes visible or is left, so it only polls when shown. */
@@ -2608,7 +2660,7 @@ async function refreshInputQueue(): Promise<void> {
     if (dragging && existing) return existing;
     if (entry.state === 'queued' && existing?.querySelector('textarea') && existing.contains(document.activeElement)) return existing;
     const card = el('div', 'queued-input'); card.dataset.inputId = entry.id;
-    const label = el('span', 'queue-label', entry.text); label.title = `${entry.state === 'queued' ? (entry.mode === 'after-turn' ? 'After the next completed answer' : 'At Session finish or after a completed answer') : 'Awaiting receipt'} · ${entry.text}`;
+    const label = el('span', 'queue-label', entry.text); label.title = `${entry.state === 'queued' ? (entry.mode === 'after-turn' ? translate("After the next completed answer") : translate("At Session finish or after a completed answer")) : translate("Awaiting receipt")} · ${entry.text}`;
     card.append(icon('i-clock'), label);
     if (entry.state === 'queued') {
       const queueSessionSummary = sessions.find(row => row.id === selectedId);
@@ -2628,7 +2680,7 @@ async function refreshInputQueue(): Promise<void> {
       }
       label.draggable = true;
       label.tabIndex = 0;
-      label.title = 'Drag to reorder. Alt + Up/Down also moves this task.';
+      label.title = translate("Drag to reorder. Alt + Up/Down also moves this task.");
       label.ondragstart = event => {
         card.classList.add('is-dragging');
         event.dataTransfer?.setData('application/x-cos-queued-input', `${queueSession}:${entry.id}`);
@@ -2655,7 +2707,7 @@ async function refreshInputQueue(): Promise<void> {
       };
       const edit = dockAction('Edit queued task', 'i-pencil', () => {});
       edit.onclick = () => {
-        const field = document.createElement('textarea'); field.value = entry.text; field.maxLength = 16000; field.setAttribute('aria-label', 'Queued task');
+        const field = document.createElement('textarea'); field.value = entry.text; field.maxLength = 16000; field.setAttribute('aria-label', translate("Queued task"));
         const save = el('button', 'btn', 'Save'); save.setAttribute('type', 'button');
         save.onclick = async () => { if (await run(api.editQueuedInput(entry.id, field.value))) void refreshInputQueue(); };
         card.classList.add('is-editing'); card.replaceChildren(field, save); field.focus();
@@ -2701,7 +2753,7 @@ async function refreshInputQueue(): Promise<void> {
       row.append(dockAction('Dismiss delivery notice', 'i-x', () => dismissInputNotice(entry.id)));
       const retry = dockAction('Retry delivery', 'i-retry', () => {});
       retry.classList.add('delivery-retry');
-      retry.title = 'Restore this message to the composer for review and sending';
+      retry.title = translate("Restore this message to the composer for review and sending");
       retry.onclick = () => {
         const input = $<HTMLTextAreaElement>('chatInput');
         if (input.value.trim() || imageDrafts.get(draftKey())?.length) { toast('Send or clear your current draft before retrying this message.'); return; }
@@ -2713,7 +2765,7 @@ async function refreshInputQueue(): Promise<void> {
       row.append(retry);
     }
     if (['queued', 'browser'].includes(entry.state)) {
-      const cancel = dockAction('Cancel delivery', 'i-x', () => {});
+      const cancel = dockAction(translate("Cancel delivery"), 'i-x', () => {});
       cancel.onclick = async () => {
         cancel.disabled = true;
         const result = await run(api.cancelInput(entry.id));
@@ -2868,14 +2920,16 @@ function selectSession(id: string): void {
   if (parent) expandedWorkers.add(parent);
   selectedProjectId = (parent ? sessions.find(row => row.id === parent)?.projectId : selected?.projectId) ?? null;
   if (selectedProjectId) collapsedProjects.delete(selectedProjectId);
-  $<HTMLTextAreaElement>('chatInput').placeholder = 'Ask anything…';
+  $<HTMLTextAreaElement>('chatInput').placeholder = translate("Ask anything…");
   restoreDraft();
   detailFor = null;
   detailCursor = null;
   forgetTimelineRows();
+  for (const key of taskViews.get(id)?.open ?? []) openTools.add(key);
   handoff = null;
   handoffFor = null;
   paintSessions();
+  paintWorkspace();
   void loadDetail();
   void refreshInputQueue();
 }
@@ -2884,21 +2938,44 @@ function selectNewChat(projectId: string | null = null): void {
   rememberDraft(); selectionGeneration++; pendingNewInput = null;
   newChatSelected = true; selectedId = null; selectedProjectId = projectId; detailFor = null; detailCursor = null;
   applyComposerSessionModel(null, null);
+  // Explicit New task starts a fresh draft; selecting an existing task restores its draft.
   inputDrafts.delete(draftKey()); imageDrafts.delete(draftKey());
   $('inputQueue').replaceChildren();
   restoreDraft(); showView('timeline'); paintSessions(); void loadDetail();
   if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
     $('composer').animate?.([{ opacity: 0.45 }, { opacity: 1 }], { duration: 150, easing: 'ease-out' });
   }
-  $<HTMLTextAreaElement>('chatInput').placeholder = projectId ? `Message in ${projects.find(project => project.id === projectId)?.name ?? 'project'}…` : 'Ask anything…';
+  $<HTMLTextAreaElement>('chatInput').placeholder = projectId ? `Message in ${projects.find(project => project.id === projectId)?.name ?? 'project'}…` : translate("Ask anything…");
   $<HTMLTextAreaElement>('chatInput').focus();
 }
 
 export function initChat(next: Deps): void {
+  initTaskMenus();
+  deps = next;
+  workspace = createWorkspace(() => { paintSessions(); paintWorkspace(); });
+  for (const id of workspace.presentation.collapsed) collapsedProjects.add(id);
+  $('taskSearch').addEventListener('input', paintSessions);
+  for (const choice of document.querySelectorAll<HTMLButtonElement>('[data-workflow]')) choice.addEventListener('click', () => {
+    const select = $<HTMLSelectElement>('projectWorkflow'); select.value = choice.dataset.workflow!;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  $<HTMLSelectElement>('projectWorkflow').addEventListener('change', event => {
+    const select = event.currentTarget as HTMLSelectElement;
+    const kind = select.value;
+    select.value = '';
+    if (!['implement', 'diagnose', 'review'].includes(kind)) return;
+    const input = $<HTMLTextAreaElement>('chatInput');
+    const draft = workflowDraft(input.value, kind as Workflow);
+    if (draft.length > input.maxLength) { toast(translate('The draft is too long to add a workflow. Shorten it first.')); return; }
+    input.value = draft;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+  });
   deps = next;
   const agentToggle = el('button', 'btn btn-icon', '◫') as HTMLButtonElement;
   agentToggle.id = 'agentPanelToggle'; agentToggle.type = 'button'; agentToggle.hidden = true;
-  agentToggle.setAttribute('aria-label', 'Toggle sub-agent side panel'); agentToggle.setAttribute('aria-expanded', 'false');
+  agentToggle.setAttribute('aria-label', translate("Toggle sub-agent side panel")); agentToggle.setAttribute('aria-expanded', 'false');
+  agentToggle.addEventListener('click', () => workspace?.close());
   $('themeBtn').before(agentToggle);
   const agentToolGroups = new Map<string, HTMLDetailsElement>();
   agentPanel = createAgentPanel({
@@ -3087,10 +3164,31 @@ export function initChat(next: Deps): void {
     filterSettingsSections(document.querySelector<HTMLElement>('[data-view="settings"]')!, $<HTMLInputElement>('settingsSearch').value);
   });
   const composerMenus = [...document.querySelectorAll<HTMLDetailsElement>('.composer-menu, .session-controls')];
+  for (const menu of composerMenus) menu.addEventListener('keydown', event => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    if (event.target instanceof Element && event.target.matches('input, textarea, select')) return;
+    const focusOption = () => {
+      const buttons = [...menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')].filter(button => button.getClientRects().length > 0);
+      if (!buttons.length) return;
+      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : event.key === 'ArrowDown' ? (index + 1) % buttons.length : (index + buttons.length - 1) % buttons.length;
+      buttons[next]!.focus();
+    };
+    event.preventDefault();
+    if (!menu.open) { menu.open = true; requestAnimationFrame(focusOption); } else focusOption();
+  });
   document.addEventListener('click', (event) => {
     for (const menu of composerMenus) if (!menu.contains(event.target as Node) || ((event.target as HTMLElement).closest('button') && !(event.target as HTMLElement).closest('[data-keep-menu]'))) menu.open = false;
   });
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') for (const menu of composerMenus) menu.open = false; });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    for (const menu of composerMenus) {
+      if (!menu.open) continue;
+      const ownsFocus = menu.contains(document.activeElement);
+      menu.open = false;
+      if (ownsFocus) menu.querySelector('summary')?.focus();
+    }
+  });
   $('chatInput').addEventListener('input', () => {
     const hasText = !!$<HTMLTextAreaElement>('chatInput').value.trim();
     if (planRequestId || preparedPlan || (planMode && !hasText)) { cancelTaskPlan(); planMode = hasText; }
@@ -3191,7 +3289,7 @@ export function initChat(next: Deps): void {
   });
   $('bridgeFolder').addEventListener('click', async () => {
     const dir = await run(api.openExtensionFolder());
-    if (dir) toast('Extension folder opened');
+    if (dir) toast(translate('Extension folder opened'));
   });
 
   api.onSessionChanged(scheduleReload);

@@ -537,6 +537,15 @@ describe('settings writes from more than one UI', () => {
     expect(getConfig().goal.enabled).toBe(false);
   });
 
+  it('accepts and persists language changes and preserves them across stale unrelated saves', async () => {
+    const base = defaultConfig(); await saveConfig(base);
+    expect((await save({ ...base, ui: { ...base.ui, language: 'zh-CN' } }, base)).ok).toBe(true);
+    expect(getConfig().ui.language).toBe('zh-CN');
+    expect((await save({ ...base, ui: { ...base.ui, theme: 'light' } }, base)).ok).toBe(true);
+    expect(getConfig().ui.language).toBe('zh-CN');
+    expect((await save({ ...base, ui: { ...base.ui, language: 'unsupported' } }, base)).ok).toBe(false);
+  });
+
   it('preserves a newer unattributed-call choice across an unrelated stale renderer save', async () => {
     const base = defaultConfig();
     await saveConfig(base);

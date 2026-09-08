@@ -1,3 +1,5 @@
+import { appearanceSchema, mergeAppearance } from '../shared/appearance.js';
+import { LANGUAGE_CODES } from '../shared/languages.js';
 import { noteChatOrigin } from './session/recorder.js';
 import { REASONING_EFFORTS } from '../shared/session.js';
 import { getChatModels, startChatModelDiscovery, configureChatModelDiscovery } from './chat-models.js';
@@ -139,6 +141,7 @@ const settingsPatch = z.object({
     binaryPath: z.string().max(4096)
   }),
   ui: z.object({
+    appearance: appearanceSchema.optional(),
     developerMode: z.boolean().optional(),
     finishTool: z.boolean().optional(),
     planBackend: z.enum(['chatgpt', 'api']).optional(),
@@ -149,6 +152,7 @@ const settingsPatch = z.object({
     minimizeToTray: z.boolean(),
     autoConnect: z.boolean(),
     privacyScreenshots: z.boolean(),
+    language: z.enum(LANGUAGE_CODES).optional(),
     theme: z.enum(['light', 'dark'])
   }),
   sessions: z.object({
@@ -245,6 +249,8 @@ function mergeSettings(current: Config, base: SettingsSnapshot, wanted: Settings
       backgroundChats: pick(current.ui.backgroundChats, base.ui.backgroundChats, wanted.ui.backgroundChats),
       tabsToKeepOpen: pick(current.ui.tabsToKeepOpen, base.ui.tabsToKeepOpen, wanted.ui.tabsToKeepOpen),
       minimizeToTray: pick(current.ui.minimizeToTray, base.ui.minimizeToTray, wanted.ui.minimizeToTray),
+      language: pick(current.ui.language, base.ui.language, wanted.ui.language),
+      appearance: mergeAppearance(current.ui.appearance, base.ui.appearance, wanted.ui.appearance),
       autoConnect: pick(current.ui.autoConnect, base.ui.autoConnect, wanted.ui.autoConnect),
       privacyScreenshots: pick(
         current.ui.privacyScreenshots,
@@ -359,7 +365,7 @@ function handle<T>(channel: string, fn: (payload: unknown) => Promise<T>): void 
   });
 }
 
-export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall: () => void): void {
+export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall: () => void, refreshNativeUi: () => void = () => {}): void {
   handle('usage:get', () => usageOverview());
   handle('state:get', async () => {
     const state = await buildState();
@@ -387,6 +393,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     // Without this, selecting Dark on macOS left the title bar, menus and file picker in the
     // system theme until restart (and startup still defaulted to system before index.ts applies it).
     nativeTheme.themeSource = next.ui.theme;
+    refreshNativeUi();
     // BrowserWindow's native backing color is fixed at construction unless updated explicitly.
     // Keep it in lock-step too: the default macOS application menu exposes Reload, and after a
     // live theme switch an old opposite background otherwise flashes behind the renderer while it

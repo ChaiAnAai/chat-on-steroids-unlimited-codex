@@ -1,4 +1,4 @@
-appId: com.chatonsteroids.app
+appId: com.chatonsteroids.desktop.local
 productName: Chat On Steroids
 copyright: MIT licensed
 
@@ -52,6 +52,7 @@ toolsets:
   appimage: "1.0.3"
 
 win:
+  executableName: Chat On Steroids Local
   target: nsis
   icon: build/icon.ico
   requestedExecutionLevel: asInvoker
@@ -77,8 +78,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Chat On Steroids
-  artifactName: Chat-On-Steroids-Setup-${arch}.${ext}
+  shortcutName: Chat On Steroids 中文版
+  artifactName: Chat-On-Steroids-Local-Setup-${arch}.${ext}
   uninstallDisplayName: Chat On Steroids
   deleteAppDataOnUninstall: false
 

@@ -184,6 +184,10 @@ it('limits the stepped composer to observed Sol Low upwards and Astra without in
     expect(slider.getAttribute('aria-valuetext')).not.toMatch(/Instant|5\.5|Pro|Minimal/);
   }
   expect(doc.querySelector('.power-track')!.getAttribute('style')).toContain('--power-position: 100%');
+  (doc.querySelector('.power-model[data-model="sol"]') as HTMLButtonElement).click();
+  expect(confirmedComposerModel()).toEqual({ model: 'sol', reasoningEffort: 'high' });
+  expect(doc.querySelector('#composerPowerChoices input')).toBe(slider);
+  expect(doc.querySelector('.power-model[data-model="sol"]')!.getAttribute('aria-pressed')).toBe('true');
   const effort = doc.getElementById('composerReasoning') as HTMLSelectElement;
   const injected = doc.createElement('option'); injected.value = 'none'; effort.append(injected); effort.value = 'none';
   expect(confirmedComposerModel()).toBeNull();

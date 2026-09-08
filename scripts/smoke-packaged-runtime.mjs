@@ -56,7 +56,7 @@ if (targetPlatform === 'darwin') {
   appExecutable = path.join(appBundle, 'Contents', 'MacOS', 'Chat On Steroids');
 } else {
   resourcesDir = path.join(packageRoot, 'resources');
-  appExecutable = path.join(packageRoot, targetPlatform === 'win32' ? 'Chat On Steroids.exe' : 'chat-on-steroids');
+  appExecutable = path.join(packageRoot, targetPlatform === 'win32' ? 'Chat On Steroids Local.exe' : 'chat-on-steroids');
 }
 
 function required(relative) {

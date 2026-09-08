@@ -10,7 +10,7 @@ type Tab = { id: number; url?: string; pendingUrl?: string; windowId?: number };
 async function worker(inputs: Array<{ id: string; conversationId: string | null }>, modelCatalogRequest?: { nonce: string; expiresAt: number }, priorLocal: Record<string, unknown> = {}) {
   const tabs: Tab[] = [];
   const event = { addListener: () => {} };
-  const localSaved: Record<string, unknown> = { port: 8765, token: 'test-pairing', ...priorLocal };
+  const localSaved: Record<string, unknown> = { port: 18775, token: 'test-pairing', ...priorLocal };
   const local = { get: async () => ({ ...localSaved }), set: vi.fn(async (value: object) => { Object.assign(localSaved, value); }), remove: async () => {} };
   const saved: Record<string, unknown> = {};
   const session = { get: async () => ({ ...saved }), set: async (value: object) => { Object.assign(saved, value); }, remove: async (key: string) => { delete saved[key]; } };

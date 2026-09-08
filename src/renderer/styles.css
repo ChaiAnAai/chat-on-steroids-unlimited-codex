@@ -515,6 +515,8 @@ main {
   padding: 7px;
 }
 
+#projectWorkflow { width: auto; max-width: 112px; padding: 5px 7px; font: inherit; font-size: 12px; }
+
 /* A two-button segmented control, used for the log filter. */
 .seg {
   display: inline-flex;
@@ -1192,28 +1194,8 @@ main {
   padding: 8px 0;
 }
 
-.wizard.is-tidy .step.is-done .step-body > :not(h3) {
-  display: none;
-}
-
 .wizard.is-tidy .step.is-done[data-step='chatgpt'] {
   padding: 14px 0;
-}
-
-/* Folder access remains editable after onboarding has finished. */
-.wizard.is-tidy .step.is-done[data-step='folder'] .step-body > .step-actions,
-.wizard.is-tidy .step.is-done[data-step='chatgpt'] .step-body > .step-actions {
-  display: flex;
-}
-
-/*
- * Exception to the collapse: a connector the app is publishing that ChatGPT has never
- * called is unfinished setup. Hiding its card would let an optional connector the user
- * switched on but never created look finished, which is the one state tidying must not
- * invent. The instructions still collapse — only the cards stay.
- */
-.wizard.is-tidy .step.is-done[data-step='chatgpt'] .step-body > .connectors.has-unfinished {
-  display: grid;
 }
 
 .wizard.is-tidy .step.is-done h3 {
@@ -2566,7 +2548,7 @@ select option { background: var(--card); color: var(--ink); }
   .usage-panel .setting > input, .usage-panel .setting > select { flex-basis: 130px; width: 130px; }
 }
 
-.model-menu .composer-popover { width: 272px; padding: 8px 12px 15px; }
+.model-menu .composer-popover { width: min(340px, calc(100vw - 40px)); padding: 14px 16px 16px; }
 .model-menu .model-reload { display: flex; width: 28px; height: 28px; min-height: 28px; padding: 5px; justify-content: center; }
 #composerModelStatus { font-size: 12px; padding: 4px 10px; line-height: 1.5; }
 .power-header { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; align-items: center; gap: 8px; margin-bottom: 17px; }
@@ -2575,12 +2557,22 @@ select option { background: var(--card); color: var(--ink); }
 .power-caption strong { font-size: 14px; font-weight: 600; }
 .power-caption span { font-size: 11px; color: var(--soft); }
 #composerPowerChoices:not(:empty) { padding: 0 3px; }
-.power-track { position: relative; height: 28px; border-radius: 999px; background: linear-gradient(to right, #4796ff var(--power-position, 0%), var(--edge) var(--power-position, 0%)); }
-.power-dots { position: absolute; inset: 0 16px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
-.power-dot { width: 4px; height: 4px; background: #fff9; border-radius: 50%; }
-#composerPowerChoices input { position: absolute; inset: -2px 0; appearance: none; width: 100%; height: 32px; border: 0; padding: 0; margin: 0; background: transparent; cursor: pointer; }
-#composerPowerChoices input::-webkit-slider-thumb { appearance: none; width: 32px; height: 32px; background: #fff; border-radius: 50%; border: 1px solid #d5dce5; box-shadow: 0 1px 4px #0004; }
-#composerPowerChoices input:focus-visible { outline: 2px solid #4796ff; outline-offset: 5px; }
+.power-track { position: relative; height: 8px; margin-block: 22px; border-radius: 999px; background: linear-gradient(to right, var(--accent) var(--power-position, 0%), var(--edge) var(--power-position, 0%)); }
+.power-dots { position: absolute; inset: 0 10px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+.power-dot { width: 4px; height: 4px; background: var(--soft); border-radius: 50%; }
+.power-dot.is-passed { background: #fff; }
+#composerPowerChoices input { position: absolute; inset: -18px 0; appearance: none; width: 100%; height: 44px; border: 0; padding: 0; margin: 0; background: transparent; cursor: pointer; }
+#composerPowerChoices input::-webkit-slider-thumb { appearance: none; width: 20px; height: 20px; background: #fff; border-radius: 50%; border: 1px solid #d5dce5; box-shadow: 0 2px 6px #0004; }
+#composerPowerChoices input:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; border-radius: 8px; }
+#composerPowerChoices input::-webkit-slider-thumb { transition: box-shadow 120ms; }
+#composerPowerChoices input:active::-webkit-slider-thumb { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 25%, transparent), 0 2px 5px #0004; }
+#composerModelChoices { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 16px; padding: 3px; border-radius: 9px; background: var(--sunk); }
+#composerModelChoices:empty { display: none; }
+.model-menu .composer-popover .power-model { flex: 1; width: auto; justify-content: center; text-align: center; font-size: 12px; border: 0; border-radius: 6px; padding: 8px; }
+.model-menu .power-model[aria-pressed='true'] { color: var(--ink); background: var(--hover); box-shadow: 0 1px 4px #0002; }
+.power-endpoints { display: flex; justify-content: space-between; gap: 16px; margin-top: 12px; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.power-endpoints span { max-width: 48%; }
+.power-endpoints span:last-child { text-align: right; }
 
 /* Contextual controls: normal chat contains prose and work, diagnostics stay optional. */
 #workspaceSettings { flex: 1; min-height: 40px; justify-content: flex-start; text-align: left; font-size: 14px; padding: 10px; border: 0; border-radius: 8px; }

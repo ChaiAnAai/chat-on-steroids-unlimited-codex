@@ -1,0 +1,44 @@
+/* User appearance values override workspace defaults in one place. */
+body { font-family: var(--ui-font); font-size: var(--ui-text-size); }
+:root { --accent: var(--ui-accent, #729ac8); --accent-wash: color-mix(in srgb, var(--ui-accent, #729ac8) 14%, var(--page)); --accent-edge: color-mix(in srgb, var(--ui-accent, #729ac8) 45%, var(--page)); }
+:root[data-theme='dark'] { --accent: var(--ui-accent, #729ac8); --accent-wash: color-mix(in srgb, var(--ui-accent, #729ac8) 14%, var(--page)); --accent-edge: color-mix(in srgb, var(--ui-accent, #729ac8) 45%, var(--page)); }
+.sess { min-height: var(--ui-row-height, 36px); }
+.sess.is-sel { box-shadow: inset 2px 0 var(--ui-accent); }
+.sess-top b, .project-heading, #chatTitle { font-size: var(--ui-text-size); }
+.app[data-screen='chat'] .composer { width: min(var(--ui-chat-width, 760px), calc(100% - 48px)); border-radius: var(--ui-radius, 16px); }
+.app[data-screen='chat'] #chatBody { padding-inline: max(24px, calc((100% - var(--ui-chat-width, 760px)) / 2)); }
+.app[data-screen='chat'] .composer textarea, #timeline .msg, .pending-message-text { font-size: var(--ui-text-size); }
+#timeline > * { margin-block: var(--ui-message-gap); }
+.composer:focus-within { border-color: var(--ui-accent); }
+pre, code, .msg.rich code, .inspector-code { font-family: var(--mono); font-size: var(--ui-code-size, 13px); }
+.appearance-dialog { margin: auto; width: min(700px, calc(100vw - 48px)); max-height: min(760px, calc(100dvh - 48px)); overflow: hidden; padding: 24px; color: var(--ink); background: var(--page); border: 1px solid var(--edge); border-radius: 18px; box-shadow: var(--surface-shadow); }
+.appearance-dialog[open] { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.appearance-content { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 8px; }
+.appearance-dialog > button { justify-self: start; margin-top: 16px; }
+.appearance-dialog::backdrop { background: #0007; }
+.appearance-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 0; min-height: 36px; border: 0; }
+.appearance-dialog h2 { margin: 0; font-size: 18px; }
+.appearance-dialog > p { font-size: 12px; color: var(--soft); }
+.appearance-dialog button { font: inherit; color: var(--ink); background: var(--hover); border: 1px solid var(--line); padding: 7px 12px; border-radius: 7px; cursor: pointer; }
+.appearance-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px 28px; padding-block: 16px; }
+.appearance-fields label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
+.appearance-fields :is(select, input) { grid-column: 1 / -1; width: 100%; min-width: 0; font: inherit; accent-color: var(--ui-accent); }
+.appearance-fields select { padding: 8px; color: var(--ink); background: var(--card); border: 1px solid var(--edge); border-radius: 6px; }
+.appearance-fields label:has(input[type='checkbox']), .appearance-fields label:has(input[type='color']) { grid-template-columns: 1fr auto; }
+.appearance-fields input[type='checkbox'] { appearance: none; grid-column: 2; grid-row: 1; width: 36px; height: 22px; border: 0; border-radius: 999px; background: var(--track); padding: 3px; cursor: pointer; transition: background-color 160ms; }
+.appearance-fields input[type='checkbox']::after { content: ''; display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0003; transition: translate 180ms cubic-bezier(.22,1,.36,1); }
+.appearance-fields input[type='checkbox']:checked { background: var(--accent); }
+.appearance-fields input[type='checkbox']:checked::after { translate: 14px 0; }
+.appearance-fields input[type='color'] { grid-column: 2; grid-row: 1; width: 42px; height: 32px; padding: 3px; border-radius: 9px; border: 1px solid var(--edge); background: var(--card); cursor: pointer; }
+.appearance-fields input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
+.appearance-fields input[type='color']::-webkit-color-swatch { border: 0; border-radius: 5px; }
+.appearance-fields input[type='range'] { appearance: none; height: 30px; padding: 0; background: transparent; cursor: pointer; }
+.appearance-fields input[type='range']::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; background: var(--edge); }
+.appearance-fields input[type='range']::-webkit-slider-thumb { appearance: none; height: 14px; width: 14px; margin-top: -5px; background: var(--accent); border: 2px solid var(--page); border-radius: 50%; box-shadow: 0 0 0 1px var(--accent); }
+.appearance-fields output { color: var(--soft); font-size: 12px; }
+.appearance-preview { padding: 18px; margin: 0 0 20px; border: 1px solid var(--line); border-radius: var(--ui-radius); background: var(--card); }
+.appearance-preview p { font-size: var(--ui-text-size); }
+html[data-reduce-motion='true'] *, html[data-reduce-motion='true'] *::before, html[data-reduce-motion='true'] *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+@media (max-width: 520px) { .appearance-fields { grid-template-columns: 1fr; } }
+@media (max-height: 600px) { .appearance-dialog { padding: 18px; max-height: calc(100dvh - 24px); } .appearance-fields { gap: 14px 24px; } }
+@media (max-width: 760px) { .app[data-screen='chat'] .composer { width: calc(100% - 28px); } }

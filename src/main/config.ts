@@ -1,3 +1,5 @@
+import { appearanceSchema } from '../shared/appearance.js';
+import { LANGUAGE_CODES } from '../shared/languages.js';
 import { REASONING_EFFORTS } from '../shared/session.js';
 /**
  * Non-secret settings, stored as one small JSON file in the app's userData folder.
@@ -258,6 +260,7 @@ const configSchema = z.object({
     binaryPath: z.string().max(4096)
   }),
   ui: z.object({
+    appearance: appearanceSchema.optional(),
     developerMode: z.boolean().optional(),
     finishTool: z.boolean().optional(),
     planBackend: z.enum(['chatgpt', 'api']).optional(),
@@ -268,6 +271,7 @@ const configSchema = z.object({
     minimizeToTray: z.boolean(),
     autoConnect: z.boolean(),
     privacyScreenshots: z.boolean().optional().default(false),
+    language: z.enum(LANGUAGE_CODES).optional().default('en'),
     // Dark is the design the app is drawn for, and a config written before the theme
     // existed has no stored answer to override — so it is the default rather than the
     // fallback. An explicit `light` is somebody's own choice and is never touched.
@@ -404,7 +408,7 @@ export function defaultConfig(platform: NodeJS.Platform = process.platform, rele
     capabilities: firstLaunchCapabilities(platform, release),
     readOnly: false,
     tunnel: { kind: 'openai', tunnelId: '', desktopTunnelId: '', binaryPath: '' },
-    ui: { minimizeToTray: true, autoConnect: false, privacyScreenshots: false, theme: 'dark' },
+    ui: { minimizeToTray: true, autoConnect: false, privacyScreenshots: false, language: 'en', theme: 'dark' },
     sessions: { ...DEFAULT_SESSIONS },
     compaction: { ...DEFAULT_COMPACTION },
     multiAgent: { ...FIRST_LAUNCH_MULTI_AGENT },

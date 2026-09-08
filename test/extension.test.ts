@@ -89,7 +89,7 @@ describe('extension release metadata', () => {
   });
 
   /**
-   * The installed popup showed "Paired · port 8765" with a green dot and, underneath it,
+   * The installed popup showed "Paired · port 18775" with a green dot and, underneath it,
    * a six-digit code field and a Pair button — a page contradicting itself about the one
    * thing it exists to report. There is nothing to type any more, so the way to keep that
    * from coming back is for the markup to have no field to type into.
@@ -733,7 +733,7 @@ describe('accepted helper tab cleanup', () => {
       const other = '11111111-2222-4333-8444-555555555555';
       let url = `https://chatgpt.com/c/${helper}`;
       const worker = loadWorker({
-        local: new FakeStorageArea({ port: 8765, token: 'paired-token' }), session: new FakeStorageArea(),
+        local: new FakeStorageArea({ port: 18775, token: 'paired-token' }), session: new FakeStorageArea(),
         tabsGet: async () => ({ id: 1, url }),
         fetch: async (input) => {
           const route = new URL(input).pathname;
@@ -765,7 +765,7 @@ describe('accepted helper tab cleanup', () => {
  * too: this worker asks on the maintenance alarm it already runs, and reloads the exact tab.
  */
 describe('exact chat recovery from a fresh Chrome tab scan', () => {
-  const paired = { port: 8765, token: 'paired-token' };
+  const paired = { port: 18775, token: 'paired-token' };
   const CHAT = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
   const OTHER = '11111111-2222-4333-8444-555555555555';
 
@@ -1041,7 +1041,7 @@ describe('exact chat recovery from a fresh Chrome tab scan', () => {
 });
 
 describe('active agent tab discard protection', () => {
-  const paired = { port: 8765, token: 'paired-token' };
+  const paired = { port: 18775, token: 'paired-token' };
   const CHAT = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
   it('protects the exact live chat and restores only the tab policy it changed', async () => {
@@ -1158,7 +1158,7 @@ describe('app-owned retained tab pool', () => {
   async function budget(options: { safe?: (tab: number) => boolean; changed?: number; keep?: number; recent?: number; protectDuplicate?: boolean; reverseActivity?: boolean } = {}) {
     const tabs = [1, 2, 3, 4, 5, 6].map(n => ({ id: n, windowId: n === 5 ? 9 : 7, url: `https://chatgpt.com/c/${id(n === 4 ? 3 : n)}`, active: n === 5, lastAccessed: n === options.recent ? Date.now() : 0 }));
     const worker = loadWorker({
-      local: new FakeStorageArea({ port: 8765, token: 'paired-token' }),
+      local: new FakeStorageArea({ port: 18775, token: 'paired-token' }),
       session: new FakeStorageArea({ tabDocuments: Object.fromEntries(tabs.map(tab => [tab.id, `doc-${tab.id}`])), tabEpochs: Object.fromEntries(tabs.map(tab => [tab.id, 0])) }),
       fetch: async input => response(200, new URL(input).pathname === '/hello' ? { app: 'chat-on-steroids', paired: true } : {
         ok: true, repairs: [], tabsToKeepOpen: options.keep ?? 2,
@@ -1202,7 +1202,7 @@ describe('app-owned retained tab pool', () => {
 });
 
 describe('worker settings authority', () => {
-  const paired = { port: 8765, token: 'paired-token' };
+  const paired = { port: 18775, token: 'paired-token' };
   const CHAT = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
   it('authorizes Stop through the real runtime dispatcher and rejects a retired document', async () => {
@@ -1420,7 +1420,7 @@ describe('worker settings authority', () => {
  * could not open — which is the only thing that runs while no ChatGPT page exists.
  */
 describe('extension command delivery', () => {
-  const paired = { port: 8765, token: 'paired-token' };
+  const paired = { port: 18775, token: 'paired-token' };
 
   it('redeems only the command id the page was opened for', async () => {
     const local = new FakeStorageArea(paired);
@@ -1581,7 +1581,7 @@ describe('extension command delivery', () => {
   });
 
   it('provisions itself silently on the first call and retries with the new token', async () => {
-    const local = new FakeStorageArea({ port: 8765 });
+    const local = new FakeStorageArea({ port: 18775 });
     const session = new FakeStorageArea();
     const seen: Array<{ path: string; auth: unknown }> = [];
     const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
@@ -1606,8 +1606,25 @@ describe('extension command delivery', () => {
     expect(fetch.mock.calls.some(([, init]) => String((init as any)?.body ?? '').includes('code'))).toBe(false);
   });
 
+  it('discards cached upstream authority before discovering the local edition', async () => {
+    const local = new FakeStorageArea({ port: 8765, token: 'upstream-token', commandAckOutbox: [{ id: 'old-command' }] });
+    const session = new FakeStorageArea({ journal: [{ id: 'old-command' }] });
+    const fetch = vi.fn(async (input: string) => {
+      const url = new URL(input);
+      if (url.pathname === '/hello') return response(200, { app: 'chat-on-steroids', paired: false });
+      if (url.pathname === '/pair') return response(200, { token: 'local-token' });
+      return response(404, {});
+    });
+    const worker = loadWorker({ local, session, fetch });
+    expect(await worker.send({ type: 'status' })).toMatchObject({ connected: true, paired: true });
+    expect(fetch.mock.calls.every(([input]) => new URL(input).port !== '8765')).toBe(true);
+    expect(local.data.token).toBe('local-token');
+    expect(local.data.commandAckOutbox).toEqual([]);
+    expect(JSON.stringify(fetch.mock.calls)).not.toContain('upstream-token');
+  });
+
   it('re-provisions once when the app no longer recognises the stored token', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'stale-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'stale-token' });
     const session = new FakeStorageArea();
     const tokens: Array<unknown> = [];
     const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
@@ -1643,7 +1660,7 @@ describe('extension command delivery', () => {
  * that document instead.
  */
 describe('extension revival delivery', () => {
-  const paired = { port: 8765, token: 'paired-token' };
+  const paired = { port: 18775, token: 'paired-token' };
   const CHAT = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
   const PRIME = '11111111-2222-4333-8444-555555555555';
   const revival = { id: 'cmd-wake', conversationId: CHAT };
@@ -1826,7 +1843,7 @@ describe('extension revival delivery', () => {
 
 describe('extension observation journal', () => {
   it('does not permanently settle a worker command merely because its bootstrap message was sent', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const fetch = vi.fn(async (input: string) => {
       const url = new URL(input);
@@ -1843,7 +1860,7 @@ describe('extension observation journal', () => {
   });
 
   it('preserves the observation journal on a 426 protocol mismatch', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const fetch = vi.fn(async (input: string) => {
       const url = new URL(input);
@@ -1873,7 +1890,7 @@ describe('extension observation journal', () => {
   });
 
   it('keeps one retry alarm while work remains instead of resetting it on every failure', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     let healthy = false;
     const fetch = vi.fn(async (input: string) => {
@@ -1906,7 +1923,7 @@ describe('extension observation journal', () => {
   });
 
   it('durably retries a lost command ACK after the service worker restarts', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const firstFetch = vi.fn(async (input: string) => {
       const url = new URL(input);
@@ -1953,7 +1970,7 @@ describe('extension observation journal', () => {
   });
 
   it('keeps a fresh command page journal behind its pending ACK after the route gets an id', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     let ackHealthy = false;
     const postedEvents: Array<Record<string, unknown>> = [];
@@ -2150,7 +2167,7 @@ describe('extension observation journal', () => {
   });
 
   it('drains each conversation separately so navigation cannot file chat A observations into chat B', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const posted: Array<{ conversationId: string; events: Array<{ text?: string }> }> = [];
     const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
@@ -2184,7 +2201,7 @@ describe('extension observation journal', () => {
 
   it('delivers the triggering conversation journal before asking the app for a Goal draft', async () => {
     const conversationId = '11111111-2222-3333-4444-555555555555';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     let acceptEvents = false;
     const order: string[] = [];
@@ -2245,7 +2262,7 @@ describe('extension observation journal', () => {
 
   it('carries the browser tab identity through Goal activity, draft and acknowledgement', async () => {
     const conversationId = '22222222-3333-4444-5555-666666666666';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const seen: Array<{ route: string; client: string | null }> = [];
     const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
@@ -2277,7 +2294,7 @@ describe('extension observation journal', () => {
 
   it('raises only the exact owned Goal tab and never opens a duplicate', async () => {
     const conversationId = '22222222-3333-4444-5555-666666666666';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const worker = loadWorker({ local, session });
 
@@ -2306,7 +2323,7 @@ describe('extension observation journal', () => {
 
   it('refuses a Goal draft while the triggering transcript is still not deliverable', async () => {
     const conversationId = '11111111-2222-3333-4444-555555555555';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     let drafts = 0;
     const fetch = vi.fn(async (input: string) => {
@@ -2359,7 +2376,7 @@ describe('extension observation journal', () => {
   });
 
   it('closes a conversation only when its final browser tab is actually gone', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const closed: string[] = [];
     const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
@@ -2393,7 +2410,7 @@ describe('extension observation journal', () => {
   });
 
   it('closes a conversation when its tab survives but navigates away from ChatGPT', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const closed: string[] = [];
     const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
@@ -2430,7 +2447,7 @@ describe('extension observation journal', () => {
    * not the chat's own is the chat leaving; its own URL is the ambiguous reload it always was.
    */
   it('closes a conversation when its tab does a full navigation to another ChatGPT URL', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const closed: string[] = [];
     const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
@@ -2459,7 +2476,7 @@ describe('extension observation journal', () => {
 
   it('lets terminal navigation beat a delayed message from the dying document', async () => {
     const conversationId = '11111111-2222-3333-4444-555555555555';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea({ tabConversations: { '12': conversationId } });
     // Force both handlers through the same cold-worker load window. The browser event is
     // delivered first; stale content IPC arrives while storage is still resolving.
@@ -2492,7 +2509,7 @@ describe('extension observation journal', () => {
   it('rejects the old document after an external round trip and lets only the new document own the tab', async () => {
     const a = '11111111-2222-3333-4444-555555555555';
     const b = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const closed: string[] = [];
     const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
@@ -2524,7 +2541,7 @@ describe('extension observation journal', () => {
   it('tombstones a direct ChatGPT document navigation before the replacement document registers', async () => {
     const a = '11111111-2222-3333-4444-555555555555';
     const b = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const calls: string[] = [];
     const fetch = vi.fn(async (input: string) => {
@@ -2563,7 +2580,7 @@ describe('extension observation journal', () => {
   it('does not let the dying document revoke its terminal lease while Chrome is still navigating', async () => {
     const a = '11111111-2222-3333-4444-555555555555';
     const b = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const calls: string[] = [];
     const target = `https://chatgpt.com/c/${b}`;
@@ -2597,7 +2614,7 @@ describe('extension observation journal', () => {
 
   it('reopens a speculative terminal lease once Chrome proves the original document is settled', async () => {
     const a = '11111111-2222-3333-4444-555555555555';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const calls: string[] = [];
     const fetch = vi.fn(async (input: string) => {
@@ -2628,7 +2645,7 @@ describe('extension observation journal', () => {
 
   it('blocks the dying reload document without closing the same conversation', async () => {
     const conversationId = '11111111-2222-3333-4444-555555555555';
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const closed: string[] = [];
     const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
@@ -2775,7 +2792,7 @@ describe('extension observation journal', () => {
   });
 
   it('replaces a single unhalvable 413 observation with an explicit durable gap', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const session = new FakeStorageArea();
     const received: any[] = [];
     let rejected = false;
@@ -2903,7 +2920,7 @@ describe('extension connection', () => {
       return response(404, {});
     });
     const worker = loadWorker({
-      local: new FakeStorageArea({ port: 8765, token: 'paired-token' }),
+      local: new FakeStorageArea({ port: 18775, token: 'paired-token' }),
       session: new FakeStorageArea(),
       fetch
     });
@@ -2927,7 +2944,7 @@ describe('extension connection', () => {
 
   it('does not re-ask where the app is before every single request', async () => {
     const server = app();
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const worker = loadWorker({ local, session: new FakeStorageArea(), fetch: server.fetch });
 
     for (let n = 0; n < 5; n++) {
@@ -2976,7 +2993,7 @@ describe('extension connection', () => {
       if (url.pathname === '/activity') return response(401, { error: 'browser_disconnected' });
       return response(404, {});
     });
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const worker = loadWorker({ local, session: new FakeStorageArea(), fetch });
 
     const activity = await worker.send({
@@ -3008,7 +3025,7 @@ describe('extension connection', () => {
       }
       return response(404, {});
     });
-    const local = new FakeStorageArea({ port: 8765, token: 'old-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'old-token' });
     const worker = loadWorker({ local, session: new FakeStorageArea(), fetch });
 
     expect(await worker.send({ type: 'status' })).toMatchObject({
@@ -3091,7 +3108,7 @@ describe('extension connection', () => {
   });
 
   it('forces an immediate overwrite in known and newly discovered ChatGPT tabs', async () => {
-    const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
+    const local = new FakeStorageArea({ port: 18775, token: 'paired-token' });
     const worker = loadWorker({ local, session: new FakeStorageArea(), fetch: app().fetch });
     await worker.send({ type: 'bind', conversationId: '11111111-2222-3333-4444-555555555555' }, 11);
     await worker.send({ type: 'bind', conversationId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' }, 12);
@@ -3143,7 +3160,7 @@ describe('the overlay stylesheet', () => {
  * tests pin — the deadline, and what a deadline is allowed to mean.
  */
 describe('the goal opening, which waits on a model', () => {
-  const paired = { port: 8765, token: 'paired-token' };
+  const paired = { port: 18775, token: 'paired-token' };
 
   /** A worker whose `/goal/open` never answers on its own, and the signal it was handed. */
   function hangingApp() {

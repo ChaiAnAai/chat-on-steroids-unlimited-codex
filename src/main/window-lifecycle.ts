@@ -25,8 +25,8 @@ export function shouldBeginAppBootstrap(hasSingleInstanceLock: boolean, quitting
  * continues well past that while config/durable state is restored and, critically, before the
  * renderer CSP/permission handlers and IPC surface are installed. Keep an early re-launch from
  * constructing a BrowserWindow across that gap. The normal startup path opens the initial window
- * once the gate is enabled, so dropping an earlier focus request loses nothing; later requests
- * focus/recreate the window immediately.
+ * once the gate is enabled. A background startup instead needs to remember an early desktop
+ * activation, coalescing it until the security and IPC initialization have completed.
  */
 export function createWindowActivationGate(showWindow: () => void): {
   request: () => void;
@@ -35,19 +35,25 @@ export function createWindowActivationGate(showWindow: () => void): {
   isDisabled: () => boolean;
 } {
   let enabled = false;
+  let requested = false;
   // Shutdown is a terminal lifetime boundary, not a temporary pause. A startup continuation
   // can resume after `before-quit` because the main bootstrap contains several awaits; letting
   // that stale continuation call enable() again would reopen native activation during teardown.
   let disabled = false;
   return {
     request: () => {
-      if (enabled && !disabled) showWindow();
+      if (disabled) return;
+      if (enabled) showWindow();
+      else requested = true;
     },
     enable: () => {
-      if (!disabled) enabled = true;
+      if (disabled) return;
+      enabled = true;
+      if (requested) { requested = false; showWindow(); }
     },
     disable: () => {
       disabled = true;
+      requested = false;
       enabled = false;
     },
     isDisabled: () => disabled

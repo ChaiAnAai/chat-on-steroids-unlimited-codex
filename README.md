@@ -1,18 +1,22 @@
-> [!IMPORTANT]
-> **Set ChatGPT to English!!!!**
->
-> Set ChatGPT's interface language to **English**, then reload your ChatGPT tabs and retry model discovery in Chat On Steroids. The current model-picker integration relies on English UI labels. Other languages can leave the model list empty even when the extension is connected and all setup checks are green.
->
-> **Quick fix if the model picker isn't showing:**
->
-> 1. Open Chat On Steroids or click the model picker's **Refresh** button.
-> 2. Switch to the **Chrome window and ChatGPT tab that the app opens**.
-> 3. If ChatGPT shows a model list instead of the thinking-effort slider, click **GPT-5.6 Sol**, even if it already looks selected.
-> 4. Return to Chat On Steroids and **refresh the model picker again**.
->
-> This workaround has restored the model picker for a user whose setup checks were all green. If it still does not appear, please report it in [Issues](../../issues).
+# 本地桌面定制版
 
+本目录已加入中文界面、任务模板、连接诊断和本地更新保护。双击项目中的「启动 Chat On Steroids」或桌面「Chat On Steroids 中文版」即可打开。
 
+工作区按「项目—任务—对话—详情」组织。侧栏支持搜索（Ctrl+K）、固定任务、项目折叠；选择任务后可在顶部修改本地显示名称。任务切换会保留当前窗口中的草稿、阅读位置和工具展开状态，点击「新任务」则开始新的草稿。
+
+右侧「详情」展示当前已加载会话页中的真实改动、补丁、命令输出和连接帮助。补丁是执行时的记录，不是实时 Git 差异；命令页不是交互终端。记录多于一页时可在对话中加载较早历史后继续查看。任务名称和固定状态只影响本地显示，不修改 ChatGPT 原始聊天内容。
+
+- 当前界面改版安装包：`release/multilingual/Chat-On-Steroids-Local-Setup-x64.exe`。
+- 右上角“…” →“语言”：支持英语、简体中文、繁体中文、日语、韩语、西班牙语、法语和德语，语言包随应用离线提供。新增语言使用机器翻译初稿，主要入口已复核，尚未经过全面母语校对。
+- 任务行“…”或右键打开任务操作；方向键、Home/End 和 Esc 支持菜单导航。Ctrl+N 新建任务，Ctrl+K 搜索任务，Ctrl+B 切换侧栏。
+- 右上角“…” →“自定义外观”：调整主题、强调色、字体、独立字号、密度、对话宽度、圆角和动画，修改即时保存；可恢复默认外观。
+- 本地版不自动下载或安装上游更新；下方上游发布链接不代表包含本地改动。
+- 桌面与 `--background` 后台模式复用同一配置和进程。默认配置目录为 `%APPDATA%/Chat On Steroids Desktop`，现有设置保留。
+- 使用应用内「打开扩展文件夹」加载 **Chat On Steroids 本地版助手**。本地版使用 18775–18779 端口，不会连接旧版 8765–8769 服务。旧服务可以继续保留，但同一 ChatGPT 页面请只启用一套配套扩展，避免重复观察和操作。
+- 模型选择器增加了英文、部分简繁中文标签和序号格式的结构测试。ChatGPT 网页变化仍可能需要适配，模型列表为空时请先检查扩展连接，再点击重新加载模型。
+- 任务模板只填入草稿，检查后由用户发送；关闭自动跟进与停止当前轮次是不同操作。
+
+以下为项目原有功能说明和上游使用背景。
 <div align="center">
   <img src="extension/icons/icon128.png" width="88" alt="Chat On Steroids icon" />
   <h1>Chat On Steroids</h1>
@@ -58,7 +62,7 @@ It runs in the tray, hosts no model of its own, and works with the ChatGPT you a
 
 Every package ships with matching native dependencies, a pinned `tunnel-client`, ripgrep and the Chrome extension for that CPU. A standalone [extension zip](../../releases/latest/download/Chat-On-Steroids-Extension.zip) is attached for manual installs, and [`SHA256SUMS.txt`](../../releases/latest/download/SHA256SUMS.txt) lists every hash.
 
-Windows and AppImage installs check GitHub for a newer release on start and every six hours, download it, verify its checksum and apply it when you quit or choose **Install update**. Staged downloads are revalidated before installation. macOS and DEB installs link to the release page for manual installation.
+Upstream distributions support platform-specific updates. This local customization disables all upstream update checks, downloads and installer handoffs so local changes cannot be silently replaced.
 
 **Debian and Ubuntu: prefer the DEB.** The AppImage uses electron-builder's static launcher. On a host that disables unprivileged user namespaces, that launcher can fall back to starting Chromium with `--no-sandbox` so the app still opens. If you do not want that fallback, use the DEB.
 

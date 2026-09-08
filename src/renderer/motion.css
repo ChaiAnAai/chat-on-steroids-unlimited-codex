@@ -1,0 +1,78 @@
+/* Short, interruptible feedback. Do not animate the reconciled conversation history. */
+:root { --motion-fast: 140ms; --motion-surface: 240ms; --motion-ease: cubic-bezier(.22, 1, .36, 1); }
+:is(.btn, .sess, .composer-menu > summary, .task-menu > summary, .language-dialog button, .inspector-call) {
+  transition: background-color var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+:is(button, summary, input, textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.composer textarea:focus-visible { outline: none; }
+.composer { transition: border-color var(--motion-fast), box-shadow var(--motion-fast); }
+.composer:focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent); }
+:is(.btn-icon, .welcome-actions .btn, .send-control button):active:not(:disabled) { translate: 0 1px; }
+/* Reserve the action slot so revealing the menu never changes title truncation. */
+.sess .sess-actions { display: flex; opacity: 0; pointer-events: none; transition: opacity var(--motion-fast); }
+.sess:hover .sess-actions, .sess:focus-within .sess-actions, .sess:has(.task-menu[open]) .sess-actions { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .sess .sess-actions { opacity: 1; pointer-events: auto; } }
+.task-search { border-radius: 7px; transition: box-shadow var(--motion-fast), background-color var(--motion-fast); }
+.task-search:focus-within { background: var(--hover); box-shadow: 0 0 0 2px var(--hover); }
+
+/* Grid interpolation is disabled during direct manipulation: the divider follows the pointer. */
+.app[data-screen='chat'] { transition: grid-template-columns var(--motion-surface) var(--motion-ease); }
+.app.is-resizing { transition: none; user-select: none; cursor: col-resize; }
+.app.is-resizing .sidebar-resize { background: var(--accent); }
+.app[data-screen='chat'] > .sidebar { min-width: 0; transition: opacity var(--motion-fast), visibility 0s; }
+.app[data-screen='chat'].sidebar-collapsed > .sidebar { opacity: 0; transition: opacity var(--motion-fast), visibility 0s var(--motion-surface); }
+
+/* Animate the native details container in both directions, including its closing content. */
+.composer-menu, .task-menu { --menu-offset: 7px; }
+.appearance-menu { --menu-offset: -7px; }
+.composer-menu[open] > .composer-popover { animation: none; }
+:is(.composer-menu, .task-menu)::details-content {
+  opacity: 0; content-visibility: hidden;
+  transition: opacity var(--motion-fast), content-visibility var(--motion-surface) allow-discrete;
+}
+:is(.composer-menu, .task-menu)[open]::details-content { opacity: 1; content-visibility: visible; transition: opacity var(--motion-fast); }
+.composer-popover, .task-menu-list { translate: 0 var(--menu-offset); transition: translate var(--motion-surface) var(--motion-ease); }
+.composer-menu[open] > .composer-popover, .task-menu[open] > .task-menu-list { translate: 0 0; }
+:is(.composer-menu, .task-menu):not([open])::details-content { pointer-events: none; }
+.setup-step-content {
+  interpolate-size: allow-keywords; height: auto; opacity: 1; overflow: clip;
+  transition: height var(--motion-surface) var(--motion-ease), opacity var(--motion-surface), display var(--motion-surface) allow-discrete;
+}
+.setup-step-content[hidden] { height: 0; opacity: 0; }
+@starting-style { .setup-step-content:not([hidden]) { height: 0; opacity: 0; } }
+.task-inspector { opacity: 1; translate: 0 0; transition: opacity var(--motion-fast), translate var(--motion-surface) var(--motion-ease), display var(--motion-surface) allow-discrete; }
+.task-inspector[hidden] { opacity: 0; translate: 12px 0; pointer-events: none; }
+@starting-style { .task-inspector:not([hidden]) { opacity: 0; translate: 12px 0; } }
+@container workspace (min-width: 880px) {
+  .app[data-screen='chat'] [data-panel='chat']:not(.has-agent-panel) { grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns var(--motion-surface) var(--motion-ease); }
+  .app[data-screen='chat'] [data-panel='chat'].has-inspector { grid-template-columns: minmax(0, 1fr) 320px; }
+}
+.welcome-actions .btn { transition: translate var(--motion-surface) var(--motion-ease), background-color var(--motion-fast), border-color var(--motion-fast); }
+.welcome-actions .btn:hover { translate: 0 -2px; }
+.composer-popover, .task-menu-list, .inspector-body, .language-dialog { overscroll-behavior: contain; }
+
+/* Keep dialogs in the top layer during exit; rapid reopen reverses the transition. */
+:is(.language-dialog, .appearance-dialog, .task-rename) {
+  opacity: 0; scale: .97;
+  transition: opacity var(--motion-surface) var(--motion-ease), scale var(--motion-surface) var(--motion-ease), display var(--motion-surface) allow-discrete, overlay var(--motion-surface) allow-discrete;
+}
+:is(.language-dialog, .appearance-dialog, .task-rename)[open] { opacity: 1; scale: 1; }
+:is(.language-dialog, .appearance-dialog, .task-rename)::backdrop {
+  opacity: 0;
+  transition: opacity var(--motion-surface), display var(--motion-surface) allow-discrete, overlay var(--motion-surface) allow-discrete;
+}
+:is(.language-dialog, .appearance-dialog, .task-rename)[open]::backdrop { opacity: 1; }
+@starting-style {
+  :is(.language-dialog, .appearance-dialog, .task-rename)[open] { opacity: 0; scale: .97; }
+  :is(.language-dialog, .appearance-dialog, .task-rename)[open]::backdrop { opacity: 0; }
+}
+/* Both preferences cover every effect above, including press movement and native dialog exits. */
+html[data-reduce-motion='true'] { --motion-fast: 0ms; --motion-surface: 0ms; }
+html[data-reduce-motion='true'] :is(.btn-icon, .welcome-actions .btn, .send-control button):active { translate: none; }
+html[data-reduce-motion='true'] .welcome-actions .btn:hover { translate: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-fast: 0ms; --motion-surface: 0ms; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  :is(.btn-icon, .welcome-actions .btn, .send-control button):active { translate: none; }
+  .welcome-actions .btn:hover { translate: none; }
+}

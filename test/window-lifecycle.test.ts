@@ -47,10 +47,13 @@ describe('native window activation', () => {
     const start = vi.fn(async () => ({}));
     const context = vm.createContext({ window: { on: (event: string, callback: () => void) => {
       expect(event).toBe('show'); show = callback;
-    } }, quitting: false, startChatModelDiscovery: start, logWarn: vi.fn() });
+    } }, quitting: false, browserPresent: () => true, startChatModelDiscovery: start, logWarn: vi.fn() });
     vm.runInContext(listener, context);
     show(); await Promise.resolve();
     show(); await Promise.resolve();
+    expect(start).toHaveBeenCalledTimes(2);
+    context.browserPresent = () => false;
+    show();
     expect(start).toHaveBeenCalledTimes(2);
     context.quitting = true;
     show();
@@ -65,7 +68,7 @@ describe('native window activation', () => {
     expect(shouldBeginAppBootstrap(true, true)).toBe(false);
   });
 
-  it('drops second-instance focus requests until renderer security and IPC startup are ready', () => {
+  it('defers second-instance focus requests until renderer security and IPC startup are ready', () => {
     const show = vi.fn();
     const gate = createWindowActivationGate(show);
 
@@ -76,15 +79,15 @@ describe('native window activation', () => {
     expect(show).not.toHaveBeenCalled();
 
     gate.enable();
-    expect(show).not.toHaveBeenCalled();
-    gate.request();
     expect(show).toHaveBeenCalledTimes(1);
+    gate.request();
+    expect(show).toHaveBeenCalledTimes(2);
 
     // `before-quit` closes the gate again while bounded teardown drains. Native activation or a
     // second launch in that window must not resurrect application UI during shutdown.
     gate.disable();
     gate.request();
-    expect(show).toHaveBeenCalledTimes(1);
+    expect(show).toHaveBeenCalledTimes(2);
 
     // Startup is async. A continuation that resumes after `before-quit` can still execute its
     // old enable() call; shutdown must be a one-way boundary so that stale continuation cannot
@@ -92,7 +95,7 @@ describe('native window activation', () => {
     expect(gate.isDisabled()).toBe(true);
     gate.enable();
     gate.request();
-    expect(show).toHaveBeenCalledTimes(1);
+    expect(show).toHaveBeenCalledTimes(2);
   });
 
   it('reopens the app from the macOS Dock activation event', () => {

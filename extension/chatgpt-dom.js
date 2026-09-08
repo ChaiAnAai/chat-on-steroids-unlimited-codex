@@ -1810,14 +1810,19 @@ var CLF_DOM = (() => {
   }
 
   const CHAT_EFFORT_LABELS = { none: 'Instant', medium: 'Medium', high: 'High', xhigh: 'Extra High', pro: 'Pro' };
-  const normalizeModelLabel = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
+  const normalizeModelLabel = (value) => /^(Latest|最新)$/i.test(String(value || '').trim()) ? 'latest' : String(value || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
+  const canonicalEffort = (value) => {
+    const label = String(value || '').trim().toLowerCase();
+    const aliases = { instant: 'Instant', '即时': 'Instant', '即時': 'Instant', medium: 'Medium', '中等': 'Medium', high: 'High', '高': 'High', 'extra high': 'Extra High', '超高': 'Extra High', pro: 'Pro' };
+    return aliases[label] || null;
+  };
   /** One visible picker adapter for discovery and application; DOM ordinals are authoritative. */
   function modelPickerAccess(stillCurrent) {
     const shown = (node) => node && !node.closest('[aria-hidden="true"]') && node.getClientRects().length > 0;
     const picker = () => document.querySelector('[data-testid="composer-intelligence-picker-content"]');
     const items = () => [...(picker()?.querySelectorAll('[role="menuitemradio"]') || [])].filter(shown);
     const trigger = () => [...(composerActions()?.host?.querySelectorAll('button[aria-haspopup="menu"]') || [])]
-      .filter(shown).find((node) => /(?:Instant|Medium|High|Pro|Thinking effort)/i.test(node.textContent || ''));
+      .filter(shown).find((node) => node.getAttribute('data-testid') === 'composer-intelligence-picker' || /(?:Instant|Medium|High|Pro|Thinking effort|即时|即時|中等|超高|思考|推理)/i.test(node.textContent || ''));
     const wait = (read, timeoutMs = 3000) => new Promise((resolve) => {
       let observer, timer;
       const finish = (value) => { observer?.disconnect(); clearTimeout(timer); resolve(value); };
@@ -1826,26 +1831,28 @@ var CLF_DOM = (() => {
       observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
       timer = setTimeout(() => finish(null), timeoutMs); check();
     });
-    const power = () => picker()?.querySelector('[role="menuitem"][aria-label="Power"]');
+    const power = () => picker()?.querySelector('[role="slider"]')?.closest('[role="menuitem"]') || picker()?.querySelector('[role="menuitem"][aria-label="Power"], [role="menuitem"][aria-label="思考强度"], [role="menuitem"][aria-label="思考力度"], [role="menuitem"][aria-label="推理强度"]');
+    const modelToggle = () => picker()?.querySelector('[role="menuitem"][aria-label="Select model"], [role="menuitem"][aria-label="选择模型"], [role="menuitem"][aria-label="選擇模型"]');
     // Latest is a routing choice, not a model identity. At Pro the native badge
     // explicitly names the generation (observed: 6 Pro versus explicit 5.6 Pro).
     const latestProModel = () => {
-      const label = picker()?.querySelector('[role="menuitem"][aria-label="Select model"]')?.textContent?.trim();
+      const label = modelToggle()?.textContent?.trim();
       const match = label?.match(/^(?:GPT[- ]?)?(\d+(?:\.\d+)?)\s*Pro$/i);
       return match ? `GPT-${match[1]} Pro` : null;
     };
     const current = () => {
       if (power()?.getAttribute('aria-disabled') === 'true') return null;
       const description = (power()?.getAttribute('aria-describedby') || '').split(/\s+/).map((id) => document.getElementById(id)?.textContent || '').join(' ');
-      const match = description.match(/(Instant|Medium|Extra High|High|Pro),\s*(\d+) of (\d+)/i);
+      const match = description.match(/(Instant|Medium|Extra High|High|Pro|即时|即時|中等|超高|高)[,，]\s*(?:第\s*)?(\d+)\s*(?:of|\/|项?[,，]\s*共)\s*(\d+)/i);
       if (!match) return null;
       const position = Number(match[2]), total = Number(match[3]);
-      return total >= 1 && total <= 12 && position >= 1 && position <= total ? { label: match[1], position, total, available: !/Upgrade required/i.test(description) } : null;
+      const label = canonicalEffort(match[1]);
+      return label && total >= 1 && total <= 12 && position >= 1 && position <= total ? { label, position, total, available: !/Upgrade required|需要升级|需要升級/i.test(description) } : null;
     };
     return {
       items, current, wait, latestProModel,
       async models() {
-        const toggle = picker()?.querySelector('[role="menuitem"][aria-label="Select model"]');
+        const toggle = modelToggle();
         if (items().length && toggle?.getAttribute('aria-expanded') !== 'false') return items();
         if (!toggle || !stillCurrent()) return null;
         toggle.click(); return wait(() => toggle.getAttribute('aria-expanded') !== 'false' && items().length ? items() : null);
@@ -1903,7 +1910,7 @@ var CLF_DOM = (() => {
     const ui = modelPickerAccess(() => true);
     const checked = ui.items().find(node => node.getAttribute('aria-checked') === 'true');
     let model = checked?.textContent?.trim();
-    if (model === 'Latest') model = ui.current()?.label.toLowerCase() === 'pro' ? ui.latestProModel() : null;
+    if (normalizeModelLabel(model) === 'latest') model = ui.current()?.label.toLowerCase() === 'pro' ? ui.latestProModel() : null;
     if (!model || !/^[a-zA-Z0-9 ._-]{1,80}$/.test(model)) return null;
     const effort = Object.entries(CHAT_EFFORT_LABELS).find(([, label]) => label === ui.current()?.label)?.[0];
     return { model, ...(effort ? { reasoningEffort: effort } : {}) };
@@ -1917,7 +1924,7 @@ var CLF_DOM = (() => {
     const options = await ui.models();
     const originalModel = options?.find((node) => node.getAttribute('aria-checked') === 'true')?.textContent?.trim();
     if (!originalModel || !originalPower) { failure(originalPower ? 'model_unconfirmed' : 'power_unknown'); ui.close(); return null; }
-    const models = options.filter((node) => node.getAttribute('aria-disabled') !== 'true').map((node) => (node.textContent || '').trim()).filter((name) => /^[a-zA-Z0-9 ._-]{1,80}$/.test(name)).slice(0, 20);
+    const models = options.filter((node) => node.getAttribute('aria-disabled') !== 'true').map((node) => (node.textContent || '').trim()).filter((name) => name === '最新' || /^[a-zA-Z0-9 ._-]{1,80}$/.test(name)).slice(0, 20);
     if (!models.length) { failure('model_unconfirmed'); ui.close(); return null; }
     let result = [];
     let restored = false;
@@ -1931,14 +1938,14 @@ var CLF_DOM = (() => {
           const power = ui.current(); if (!power || power.position !== n) throw new Error('power_changed');
           const effort = Object.entries(CHAT_EFFORT_LABELS).find(([, name]) => name.toLowerCase() === power.label.toLowerCase())?.[0];
           if (power.available && effort && !efforts.includes(effort)) {
-            if (label === 'Latest') {
+          if (normalizeModelLabel(label) === 'latest') {
               const actual = effort === 'pro' && ui.latestProModel();
               if (actual) result.push({ id: actual.toLowerCase().replace(/\s+/g, '-'), label: actual, efforts: [effort] });
             } else efforts.push(effort);
           }
           if (n < first.total && !await ui.step(1)) throw new Error('power_unconfirmed');
         }
-        if (label !== 'Latest') result.push({ id: label.toLowerCase().replace(/\s+/g, '-'), label, efforts });
+        if (normalizeModelLabel(label) !== 'latest') result.push({ id: label.toLowerCase().replace(/\s+/g, '-'), label, efforts });
       }
     } catch (error) { failure(['model_unconfirmed', 'power_unknown', 'power_unconfirmed', 'power_changed'].includes(error?.message) ? error.message : 'inspection_failed'); result = null; }
     finally {

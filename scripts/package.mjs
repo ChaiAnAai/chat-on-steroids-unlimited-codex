@@ -42,5 +42,12 @@ for (const arch of arches) {
     'never'
   ];
   if (dirOnly) builderArgs.push('--dir');
+  const output = value('output', null);
+  if (output) {
+    const destination = path.resolve(root, output);
+    const relative = path.relative(path.join(root, 'release'), destination);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Package output must stay under release/');
+    builderArgs.push(`--config.directories.output=${destination}`);
+  }
   run(node, builderArgs, { ...process.env, COS_PACKAGE_ARCH: arch });
 }

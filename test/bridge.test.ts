@@ -360,7 +360,7 @@ describe('who is allowed to talk to it', () => {
   // The suite binds ephemeral ports so it can never collide with the installed app, so the
   // shipped range has to be asserted directly or a typo in it would ship unnoticed.
   it('ships the fixed candidate range the extension scans', () => {
-    expect(DEFAULT_PORTS).toEqual([8765, 8766, 8767, 8768, 8769]);
+    expect(DEFAULT_PORTS).toEqual([18775, 18776, 18777, 18778, 18779]);
   });
 
   it('identifies itself to an extension without any credential', async () => {

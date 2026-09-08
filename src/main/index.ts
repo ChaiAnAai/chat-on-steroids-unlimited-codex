@@ -12,7 +12,7 @@ import { startChatModelDiscovery } from './chat-models.js';
 import { initLogFile, logError, logInfo, logWarn } from './logger.js';
 import { unifiedExecManager } from './codex/manager.js';
 import { initSecretsPath } from './secrets.js';
-import { setBrowserOpener, setBrowserWorkArea, shutdownBridge, startBridge } from './bridge.js';
+import { browserPresent, setBrowserOpener, setBrowserWorkArea, shutdownBridge, startBridge } from './bridge.js';
 import { flushSessions, initSessionStore, pruneSessions } from './session/store.js';
 import {
   flushRecorder,
@@ -71,6 +71,15 @@ import {
 } from './window-lifecycle.js';
 import { trayGuidArgsForPlatform, trayImageSpec } from './tray-image.js';
 import { browserWindowIconPath } from './window-icon.js';
+import { DISTRIBUTION } from '../shared/distribution.js';
+import { translateMain } from './ui-copy.js';
+
+// All launch paths (installer, shortcut, background) share one profile and one lock.
+// Respect an explicit isolated profile used for tests and intentional separate workspaces.
+if (DISTRIBUTION.channel === 'local' && !app.commandLine.hasSwitch('user-data-dir')) {
+  app.setPath('userData', path.join(app.getPath('appData'), DISTRIBUTION.profileName));
+}
+const backgroundLaunch = process.argv.includes('--background');
 
 /** Durable state file holding the multi-agent run. Hashes only, never credentials. */
 const SWARM_STATE = 'swarm';
@@ -120,7 +129,9 @@ function createWindow(): void {
   // A tray close keeps this process alive. Warm the same account-owned catalog
   // whenever the window actually becomes visible, not just on process startup.
   window.on('show', () => {
-    if (!quitting) void startChatModelDiscovery().catch(error => logWarn(`model discovery on window open: ${error.message}`));
+    // Opening the desktop should not launch a browser before its companion is connected.
+    // Explicit model Refresh remains the user action that can open a discovery tab.
+    if (!quitting && browserPresent()) void startChatModelDiscovery().catch(error => logWarn(`model discovery on window open: ${error.message}`));
   });
   window.once('ready-to-show', () => {
     // A renderer can finish loading after Cmd+Q has already entered bounded teardown. Never let
@@ -241,21 +252,21 @@ function refreshTray(): void {
   const offline = state === 'offline';
   // Offline keeps the running icon: the bridge is up, the internet is not.
   const running = connected || offline;
-  const label = connected ? 'Connected' : offline ? 'No internet' : 'Not connected';
+  const label = translateMain(connected ? 'Connected' : offline ? 'No internet' : 'Not connected');
   tray.setImage(trayIcon(running));
   tray.setToolTip(`Chat On Steroids — ${label.toLowerCase()}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label, enabled: false },
       { type: 'separator' },
-      { label: 'Open', click: windowActivation.request },
+      { label: translateMain('Open'), click: windowActivation.request },
       {
-        label: running ? 'Disconnect' : 'Connect',
+        label: translateMain(running ? 'Disconnect' : 'Connect'),
         click: () => void (running ? disconnect() : connect())
       },
       { type: 'separator' },
       {
-        label: 'Quit',
+        label: translateMain('Quit'),
         click: () => {
           quitting = true;
           app.quit();
@@ -265,7 +276,9 @@ function refreshTray(): void {
   );
 }
 
-app.on('second-instance', windowActivation.request);
+app.on('second-instance', (_event, argv) => {
+  if (!argv.includes('--background')) windowActivation.request();
+});
 
 void app.whenReady().then(async () => {
   // This guard is intentionally before even app.getPath/init* calls. A secondary instance, or a
@@ -394,10 +407,11 @@ void app.whenReady().then(async () => {
     () => {
       quitting = true;
       app.quit();
-    }
+    },
+    refreshTray
   );
   windowActivation.enable();
-  windowActivation.request();
+  if (!backgroundLaunch) windowActivation.request();
   // macOS `activate` can fire on first launch, so do not wire it at module load where it could
   // create a BrowserWindow before Electron is ready. Once the initial window path is established,
   // Dock activation/re-launch can safely recreate or focus it.

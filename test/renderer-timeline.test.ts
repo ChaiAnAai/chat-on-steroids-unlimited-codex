@@ -341,6 +341,32 @@ it('pages project tasks as complete parent/worker groups and keeps the selected 
   await append([]);
   expect(section().querySelectorAll(':scope > .sess')).toHaveLength(8);
 });
+
+it('restores a task draft, reading position and opened tool after switching to another task', async () => {
+  const entries = [summary([]), { ...summary([]), id: 'second-task', conversationId: 'chat-second', title: 'Second task' }];
+  const { w } = await boot([toolCall(1, 'open-this-call')], true, [], [], { sessions: entries });
+  const input = w.document.getElementById('chatInput') as HTMLTextAreaElement;
+  input.value = 'Keep the first draft';
+  const body = w.document.getElementById('chatBody')!;
+  Object.defineProperties(body, { scrollHeight: { value: 3000, configurable: true }, clientHeight: { value: 700, configurable: true } });
+  body.scrollTop = 240;
+  const tool = w.document.querySelector('details.tool') as HTMLDetailsElement;
+  tool.open = true; tool.dispatchEvent(new w.Event('toggle'));
+  (w.document.querySelector('[data-id="second-task"]') as HTMLElement).click(); await settle();
+  expect(input.value).toBe(''); input.value = 'Second draft';
+  (w.document.querySelector(`[data-id="${entries[0]!.id}"]`) as HTMLElement).click(); await settle();
+  expect(input.value).toBe('Keep the first draft');
+  expect(body.scrollTop).toBe(240);
+  expect((w.document.querySelector('details.tool') as HTMLDetailsElement).open).toBe(true);
+  const pin = w.document.querySelector(`[data-id="${entries[0]!.id}"] .sess-pin`) as HTMLButtonElement;
+  pin.click();
+  expect(w.document.querySelector('#sessionList > .sess')?.getAttribute('data-id')).toBe(entries[0]!.id);
+  const search = w.document.getElementById('taskSearch') as HTMLInputElement;
+  search.value = 'Second'; search.dispatchEvent(new w.Event('input'));
+  expect(w.document.querySelector(`[data-id="${entries[0]!.id}"]`)).toBeNull();
+  expect(w.document.querySelector('[data-id="second-task"]')).not.toBeNull();
+  expect(input.value).toBe('Keep the first draft');
+});
 it('shows original user text while retaining transport instructions outside the visible bubble', async () => {
   const { w } = await boot([{ seq: 1, time: T0, source: 'app', kind: 'user_message', messageId: 'native-one', inputId: 'one', authoredText: 'hello', message: text('hello\n\nTransport-only control instruction') }]);
   expect(w.document.querySelector('.said.is-user .msg')?.textContent).toBe('hello');

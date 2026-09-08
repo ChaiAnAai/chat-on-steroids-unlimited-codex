@@ -2208,6 +2208,64 @@ the same complete worker history to the child conversation or move nothing.
 `bridge.test.ts`, `extension.test.ts` and `content-script.test.ts`.
 
 ## 17. Renderer, IPC, connection and desktop
+
+This checkout is the local desktop distribution. `shared/distribution.ts` defines its identity:
+one `Chat On Steroids Desktop` profile unless explicitly overridden, a distinct installer appId,
+and local companion ports 18775–18779. The companion's fixed ports and manifest permissions are
+checked against that declaration by `local-distribution.test.ts`; never scan upstream ports as
+a fallback, because doing so can pair to the wrong authority. `--background` starts the same
+runtime without a window; ordinary second launches activate it, including activation queued
+before IPC is ready. Native tray labels follow saved language after a settings save.
+
+Local builds never fetch, stage or apply upstream releases, including through manual updater
+entry points. The existing updater tests deliberately model the upstream distribution. Local
+updates require a locally reviewed package. Keep version agreement across app and companion.
+The Windows launch smoke (`scripts/smoke-desktop-launch.mjs`) uses isolated data and bridge port
+0, verifies background/second-launch activation in one process, and retains evidence logs.
+It does not prove signed installer behavior or live ChatGPT account compatibility.
+
+The desktop interface supports English and Simplified Chinese through the header language
+button. `config.ui.language` is the single persisted authority (legacy default: English).
+`renderer/i18n.ts` owns runtime copy; `i18n-extra.ts` supplies additional source-text translations,
+and `i18n-static.ts` updates explicitly marked app markup without replacing controls or drafts.
+Conversation text, tool identifiers and authored prompts remain verbatim. Language changes
+invalidate model-choice presentation caches. Tests: `renderer-i18n`, `renderer-state`, `config`.
+Setup runtime copy must translate on every state repaint, including platform-specific tray text,
+connector badges and guidance. `setup-copy.ts` translates recognized tunnel status envelopes while
+preserving unknown diagnostic text. Connector names/descriptions retain their exact protocol values
+inside an explicitly labelled original-text disclosure; its open state survives status pushes.
+`shared/languages.ts` defines the eight accepted UI locales; main config and IPC must share it.
+Additional offline dictionaries live in `renderer/locales`, with `locale-coverage` validating every
+catalogue entry, nonempty text and exact placeholders. New interface copy must extend all locale
+packs. The language picker uses native language names and a selected indicator; switches refresh
+even an empty task-list footer while preserving authored drafts. Workflow templates are translated
+only when inserted, never retroactively. Native tray labels also use the bundled dictionaries.
+`task-menu.ts` wraps existing task commands in an overflow/context menu without changing command
+authority. Arrow/Home/End navigate; Escape returns focus, outside pointer/scroll closes. Composer
+menus share keyboard navigation, excluding editable controls. Ctrl/Cmd+N invokes existing New task.
+
+`renderer/workspace.ts` owns local task display names, pins, project disclosure preferences and
+the recorded-activity inspector. These are profile-local presentation preferences, never provider
+conversation renames or recorded transcript edits. Search covers loaded tasks and project names.
+The inspector uses only the selected session's loaded events: file counts and patch previews are
+recorded evidence, not a live Git diff; command outputs are not an interactive terminal. Task
+switches retain drafts, history-page scroll position and tool disclosure state within the window.
+Explicit New task clears its draft. The inspector and agent pane are mutually exclusive.
+`workspace.css` owns this workspace layout. Tests: `workspace`, `renderer-timeline`, `ipc`; the
+isolated Electron `smoke-workspace-ui.mjs` checks actual language persistence, visible composer,
+workflow draft and connection inspector and writes screenshots under `release/ui-evidence`.
+The shell stores width (200–360 CSS px) and sidebar disclosure in `workspace-shell-v1`;
+Ctrl/Cmd+B toggles the sidebar, Ctrl/Cmd+K reveals task search, and the focusable divider supports
+arrow/Home/End keys plus pointer dragging. Display zoom 100% means OS-scaled CSS pixels with no
+extra 130% base magnification. The appearance menu reuses composer popover dismissal; Escape
+restores focus to its summary. The isolated smoke also checks keyboard width persistence and focus.
+`shared/appearance.ts` defines the validated optional `ui.appearance` configuration and field-wise
+stale-save merge. `renderer/appearance.ts` owns the live appearance dialog; `appearance.css` applies
+its font, size, accent, density, width, corner and motion tokens after workspace defaults. Theme
+continues to use `ui.theme`. Preferences live in config, never a second localStorage authority.
+The smoke checks real IPC persistence, renderer reload restoration and reset; `appearance` and
+`config` tests cover bounds, legacy profiles and independent concurrent edits.
+
 ### Astra finish continuation and durable input
 
 `session/finish.ts` owns the exact active conversation/turn finish boundary. `session_finish` is

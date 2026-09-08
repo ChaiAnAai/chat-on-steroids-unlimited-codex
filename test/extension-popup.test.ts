@@ -39,3 +39,16 @@ it('reports a synchronous Chrome reload failure and allows another explicit atte
   button.click();
   expect(reload).toHaveBeenCalledTimes(2);
 });
+
+it('switches popup language while retaining the reload action and saving the preference', () => {
+  const reload = vi.fn(); const document = openPopup(reload);
+  const save = vi.fn().mockResolvedValue(undefined);
+  (popup!.window as any).chrome.storage.local.set = save;
+  document.getElementById('languageBtn')!.click();
+  expect(document.documentElement.lang).toBe('zh-CN');
+  expect(document.getElementById('reloadBtn')!.textContent).toBe('重新加载扩展');
+  expect(save).toHaveBeenCalledWith({ popupLanguage: 'zh-CN' });
+  document.getElementById('reloadBtn')!.click();
+  expect(reload).toHaveBeenCalledOnce();
+  expect(document.getElementById('reloadStatus')!.textContent).toContain('已请求重载');
+});

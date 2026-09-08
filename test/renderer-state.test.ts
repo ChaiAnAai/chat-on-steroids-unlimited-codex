@@ -86,6 +86,22 @@ it('does not overwrite a focused dirty settings field on an unsolicited state pu
   expect(w.document.activeElement).toBe(field);
   expect(field.value).toBe('tunnel_USER_IS_STILL_TYPING');
 
+  const draft = w.document.getElementById('chatInput') as HTMLTextAreaElement;
+  draft.value = 'Please keep my draft /project';
+  draft.focus();
+  const chinese = structuredClone(state) as any;
+  chinese.config.ui.language = 'zh-CN';
+  stateListener(chinese);
+  expect(w.document.getElementById('newChat')!.textContent?.trim()).toBe('新任务');
+  expect(w.document.getElementById('languageLabel')!.textContent).toBe('语言');
+  expect(draft.placeholder).toBe('问点什么…');
+  expect(draft.value).toBe('Please keep my draft /project');
+  expect(w.document.activeElement).toBe(draft);
+  stateListener(structuredClone(state));
+  expect(w.document.getElementById('newChat')!.textContent?.trim()).toBe('New task');
+  expect(draft.placeholder).toBe('Ask anything…');
+  expect(draft.value).toBe('Please keep my draft /project');
+
   const multiAgent = w.document.getElementById('homeMaEnabled') as HTMLInputElement;
   multiAgent.focus();
   multiAgent.checked = true;
@@ -641,7 +657,7 @@ it('requires a live browser only when a browser-backed feature is actually enabl
   expect(browserStep.classList.contains('is-done')).toBe(false);
   expect(browserStep.classList.contains('is-current')).toBe(true);
   expect(doc.getElementById('wizard')!.classList.contains('is-tidy')).toBe(false);
-  expect(doc.getElementById('bridgeState')!.textContent).toContain('Authorized');
+  expect(doc.getElementById('bridgeState')!.textContent).toContain('paired but is now offline');
   expect(doc.getElementById('bridgeState')!.textContent).not.toContain('Connected.');
 
   const live = structuredClone(mounted.state) as any;
@@ -650,7 +666,7 @@ it('requires a live browser only when a browser-backed feature is actually enabl
   live.bridge = { running: true, port: 8765, paired: true, present: true, lastSeenAt: Date.now() };
   mounted.push(live);
   expect(browserStep.classList.contains('is-done')).toBe(true);
-  expect(doc.getElementById('bridgeState')!.textContent).toContain('Connected.');
+  expect(doc.getElementById('bridgeState')!.textContent).toContain('Browser connected to this app.');
 
   // Recording and multi-agent are the two independently viable bridge features. Goal is
   // browser-driven too, but it requires a recorded session and cannot run by itself when
@@ -1035,4 +1051,65 @@ it('edits a fresh Goal before first send and clears it on an independent New Cha
   (doc.getElementById('newChat') as HTMLButtonElement).click();
   await settle();
   expect(objective.value).toBe('');
+});
+
+
+it('repaints setup instructions and connector cards in both languages without changing copyable protocol text', async () => {
+  const { SURFACE_LIST } = await import('../src/main/mcp/surfaces.js');
+  const clipboard = vi.fn();
+  const mounted = await mountChat({}, [], { extensionPath: async () => ({ ok: true, data: 'C:\\test-extension' }), writeClipboard: async (value: string) => { clipboard(value); return { ok: true, data: true }; } });
+  const { window: w, state } = mounted;
+  state.status = { ...state.status, state: 'connected', detail: 'Connected. Last verified handshake with OpenAI 24s ago. Pick the tunnel in ChatGPT.', surfaces: SURFACE_LIST.map(surface => ({ ...surface, optional: !surface.required, available: true, state: 'live', lastRequestAt: null, lastToolCallAt: null, detail: '', publicUrl: null, localUrl: null })) };
+  for (const language of ['zh-CN', 'en', 'zh-CN']) {
+    state.config = { ...state.config, ui: { ...state.config.ui, language } };
+    mounted.push({ ...state });
+    const chinese = language === 'zh-CN';
+    await vi.waitFor(() => expect(w.document.getElementById('extensionPath')!.textContent).toContain(chinese ? '扩展文件夹：C:' : 'Extension folder: C:'));
+    expect(w.document.getElementById('backgroundRunningCopy')!.textContent).toContain(chinese ? '系统托盘' : 'tray');
+    expect(w.document.getElementById('chatgptConn')!.textContent).toContain(chinese ? '连接方式选择' : 'For the connection');
+    expect(w.document.getElementById('wizStatus')!.textContent).toContain(chinese ? '24 秒前' : '24s ago');
+    const cards = w.document.getElementById('connectorCards')!;
+    expect(cards.querySelector('.pill')!.textContent).toBe(chinese ? '已发布' : 'Published');
+    expect(cards.querySelector('.tag')!.textContent).toBe(chinese ? '必需' : 'required');
+    expect(cards.querySelector('button')!.textContent).toBe(chinese ? '复制' : 'Copy');
+    expect(cards.querySelector<HTMLInputElement>('input')!.value).toBe(SURFACE_LIST[0]!.connectorName);
+    const original = cards.querySelector<HTMLDetailsElement>('details')!;
+    original.open = true;
+    mounted.push({ ...state });
+    expect(cards.querySelector<HTMLDetailsElement>('details')!.open).toBe(true);
+  }
+  w.document.querySelector<HTMLButtonElement>('#connectorCards button')!.click();
+  await vi.waitFor(() => expect(clipboard).toHaveBeenCalledWith(SURFACE_LIST[0]!.connectorName));
+});
+
+
+it('keeps settings navigation available after collapsing the chat sidebar', async () => {
+  const mounted = await mountChat({}, []); const doc = mounted.window.document;
+  (doc.getElementById('backToChat') as HTMLButtonElement).click();
+  (doc.getElementById('sidebarToggle') as HTMLButtonElement).click();
+  const sidebar = doc.querySelector<HTMLElement>('.sidebar')!;
+  expect(sidebar.inert).toBe(true);
+  (doc.getElementById('workspaceSettings') as HTMLButtonElement).click();
+  expect(sidebar.inert).toBe(false);
+  (doc.getElementById('backToChat') as HTMLButtonElement).click();
+  expect(sidebar.inert).toBe(true);
+});
+
+it('retains a queued appearance change when an older acknowledgement arrives before the next edit', async () => {
+  const calls: any[] = []; const pending: Array<(value: any) => void> = [];
+  const mounted = await mountChat({}, [], { saveSettings: (patch: any) => { calls.push(structuredClone(patch)); return new Promise(resolve => pending.push(resolve)); } });
+  const w = mounted.window;
+  const change = (key: string, value: string) => { const input = w.document.querySelector<HTMLInputElement>(`[data-preference="${key}"]`)!; input.value = value; input.dispatchEvent(new w.Event('change', { bubbles: true })); };
+  const acknowledge = (patch: any) => { mounted.state.config = { ...mounted.state.config, ...patch }; pending.shift()!({ ok: true, data: { ...mounted.state } }); };
+  change('textSize', '18');
+  await vi.waitFor(() => expect(calls).toHaveLength(1));
+  change('accent', '#31a475');
+  acknowledge(calls[0]);
+  await vi.waitFor(() => expect(calls).toHaveLength(2));
+  change('font', 'mono');
+  acknowledge(calls[1]);
+  await vi.waitFor(() => expect(calls).toHaveLength(3));
+  expect(calls[2].ui.appearance).toMatchObject({ textSize: 18, accent: '#31a475', font: 'mono' });
+  acknowledge(calls[2]);
+  await new Promise(resolve => setTimeout(resolve, 0));
 });

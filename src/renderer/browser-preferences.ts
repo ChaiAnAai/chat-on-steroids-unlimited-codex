@@ -1,5 +1,6 @@
 import type { BrowserPreferences } from '../shared/browser-preferences.js';
 import { $ } from './dom.js';
+import { ui } from './i18n.js';
 
 /** Values are acknowledged extension observations, never app configuration. */
 export function initBrowserPreferences(): void {
@@ -17,12 +18,12 @@ export function initBrowserPreferences(): void {
   };
   const request = async (patch: Partial<BrowserPreferences> = {}): Promise<void> => {
     if (busy) return;
-    busy = true; paint(); status.textContent = 'Waiting for the extension to confirm…';
+    busy = true; paint(); status.textContent = ui().browserExtensionWaiting;
     try {
       const response = await window.api.browserPreferences(patch);
-      if (response.ok) { confirmed = response.data; status.textContent = 'Confirmed by the browser extension.'; }
+      if (response.ok) { confirmed = response.data; status.textContent = ui().browserExtensionConfirmed; }
       else { confirmed = null; status.textContent = response.error; }
-    } catch { confirmed = null; status.textContent = 'Unable to reach the extension. Connect it and refresh.'; }
+    } catch { confirmed = null; status.textContent = ui().browserExtensionUnavailable; }
     finally { busy = false; paint(); }
   };
   overwrite.addEventListener('change', () => void request({ overwrite: overwrite.checked }));

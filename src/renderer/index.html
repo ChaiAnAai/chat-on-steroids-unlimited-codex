@@ -4,6 +4,9 @@
     <meta charset="utf-8" />
     <title>Chat On Steroids</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./workspace.css" />
+    <link rel="stylesheet" href="./appearance.css" />
+    <link rel="stylesheet" href="./motion.css" />
   </head>
   <body>
     <!-- Icon sprite. Inline so there is no request and no font, and every glyph
@@ -73,73 +76,89 @@
 
     <div class="app" data-screen="chat">
       <aside class="sidebar">
-        <button class="btn" id="backToChat" type="button" hidden>← Back to chat</button>
+        <button class="btn" id="backToChat" type="button" hidden><span data-i18n="← Back to chat">← Back to chat</span></button>
         <div class="sidebar-brand"><span class="mark"><svg class="ico" viewBox="0 0 24 24"><use href="#i-mark" /></svg></span><strong>Chat On Steroids</strong></div>
-        <button class="btn new-chat" id="newChat" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-plus" /></svg>New chat</button>
-      <nav id="tabs" aria-label="Settings navigation" hidden>
+        <button class="btn new-chat" id="newChat" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-plus" /></svg><span data-i18n="New task">New task</span></button>
+      <nav id="tabs" aria-label="Settings navigation" data-i18n-aria-label="Settings navigation" hidden>
         <button class="is-sel" data-tab="home" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-home" /></svg>Workspace
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-home" /></svg><span data-i18n="Workspace">Workspace</span>
         </button>
-        <button data-tab="usage" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>Usage</button>
+        <button data-tab="usage" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg><span data-i18n="Usage">Usage</span></button>
 <button data-tab="setup" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-steps" /></svg>Setup
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-steps" /></svg><span data-i18n="Setup">Setup</span>
           <span class="badge" id="setupBadge" hidden></span>
         </button>
         <button data-tab="settings" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-chat" /></svg>Agents &amp; automation
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-chat" /></svg><span data-i18n="Agents &amp; automation">Agents &amp; automation</span>
         </button>
         <button data-tab="activity" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>Activity
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg><span data-i18n="Activity">Activity</span>
         </button>
       </nav>          <section class="sidebar-sessions">
             <h2>
-              Conversations
+              <span data-i18n="Projects & tasks">Projects & tasks</span>
               <span class="acts">
-                <button class="btn project-add" id="addProject" type="button" title="Add a project folder" aria-label="Add a project folder">+</button>
+                <button class="btn project-add" id="addProject" type="button" title="Add a project folder" data-i18n-title="Add a project folder" aria-label="Add a project folder" data-i18n-aria-label="Add a project folder"><svg class="ico" viewBox="0 0 24 24"><use href="#i-plus" /></svg></button>
                 <button class="btn" id="chatRefresh" type="button">
-                  <svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>Refresh
+                  <svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg><span data-i18n="Refresh">Refresh</span>
                 </button>
               </span>
             </h2>
+            <label class="task-search"><svg class="ico" viewBox="0 0 24 24"><use href="#i-search" /></svg><input id="taskSearch" type="search" placeholder="Search tasks…" data-i18n-placeholder="Search tasks…" aria-label="Search tasks" data-i18n-aria-label="Search tasks" /></label>
+            <p id="taskSearchStatus" class="muted" role="status" hidden></p>
             <div class="scroll">
               <div id="sessionList"></div>
               <p class="empty" id="sessionsEmpty" hidden>
-                Nothing recorded yet. Turn on recording in Settings, pair the Chrome extension,
-                and this fills up as you work in ChatGPT.
+                <span data-i18n="Add a project with + above. Your recorded tasks will appear here.">Add a project with + above. Your recorded tasks will appear here.</span>
               </p>
             </div>
             <p class="foot" id="sessionsFoot"></p>
           </section>
 
-        <div class="sidebar-bottom"><button class="btn" id="workspaceSettings" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-gear" /></svg>Settings</button><span class="zoom-controls"><button class="btn" id="zoomOut" type="button" aria-label="Zoom out">−</button><button class="btn" id="zoomReset" type="button" title="Reset zoom">100%</button><button class="btn" id="zoomIn" type="button" aria-label="Zoom in">+</button></span></div>
+        <div class="sidebar-bottom"><button class="btn" id="workspaceSettings" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-gear" /></svg><span data-i18n="Settings">Settings</span></button><span class="zoom-controls"><button class="btn" id="zoomOut" type="button" aria-label="Zoom out" data-i18n-aria-label="Zoom out">−</button><button class="btn" id="zoomReset" type="button" title="Reset zoom" data-i18n-title="Reset zoom">100%</button><button class="btn" id="zoomIn" type="button" aria-label="Zoom in" data-i18n-aria-label="Zoom in">+</button></span></div>
       </aside>
       <!-- ------------------------------------------------------------ header -->
       <header>
-        <span id="chatTitle">New chat</span>
+        <button class="btn btn-icon" id="sidebarToggle" type="button" aria-label="Toggle sidebar" data-i18n-aria-label="Toggle sidebar" aria-expanded="true" aria-keyshortcuts="Control+B Meta+B" title="Ctrl+B"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 4v16" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        <span id="taskProject" class="task-project"></span>
+        <span id="chatTitle"><span data-i18n="New chat">New chat</span></span>
+        <span id="taskStatus" class="task-status" role="status"></span>
         <span class="mark"><svg class="ico" viewBox="0 0 24 24"><use href="#i-mark" /></svg></span>
         <span class="title">
           Chat On Steroids
-          <span id="headerSub">Not set up yet</span>
+          <span id="headerSub"><span data-i18n="Not set up yet">Not set up yet</span></span>
         </span>
         <span class="state">
-          <button class="btn btn-icon" id="themeBtn" type="button" title="Switch to dark mode">
+          <button class="btn btn-icon" id="renameTask" type="button" aria-label="Rename task locally" data-i18n-aria-label="Rename task locally" title="Rename task locally" data-i18n-title="Rename task locally" hidden><svg class="ico" viewBox="0 0 24 24"><use href="#i-pencil" /></svg></button>
+          <button class="btn btn-icon" id="detailsToggle" type="button" aria-expanded="false" aria-controls="taskInspector"><svg class="ico" viewBox="0 0 24 24"><use href="#i-terminal" /></svg><span data-i18n="Details">Details</span></button>
+          <details class="composer-menu appearance-menu" id="appearanceMenu">
+            <summary aria-label="Appearance" data-i18n-aria-label="Appearance" title="Appearance" data-i18n-title="Appearance"><svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="19" cy="12" r="1.5" fill="currentColor"/></svg></summary>
+            <div class="composer-popover">
+              <button id="customizeAppearance" type="button" data-i18n="Customize appearance">Customize appearance</button>
+          <button class="btn btn-icon" id="languageBtn" type="button" title="Switch language" data-i18n-title="Switch language">
+            <svg class="ico" viewBox="0 0 24 24"><use href="#i-globe" /></svg>
+            <span id="languageLabel">中文</span>
+          </button>
+          <button class="btn btn-icon" id="themeBtn" type="button" title="Switch to dark mode" data-i18n-title="Switch to dark mode">
             <svg class="ico" viewBox="0 0 24 24"><use href="#i-moon" id="themeIcon" /></svg>
           </button>
+            </div>
+          </details>
           <!-- Only ever visible with a downloaded, digest-checked update waiting. This app
                lives in the tray and is closed to it, so "installs the next time you start it"
                can mean days. This is the press that means now. -->
           <button class="btn btn-install" id="installUpdate" type="button" hidden>
             <svg class="ico" viewBox="0 0 24 24"><use href="#i-bolt" /></svg>
-            <span>Install update</span>
+            <span><span data-i18n="Install update">Install update</span></span>
           </button>
           <span class="live" id="live">
             <span class="dot"></span>
-            <span id="liveState">Not connected</span>
+            <span id="liveState"><span data-i18n="Not connected">Not connected</span></span>
             <em id="liveNote"></em>
           </span>
           <button class="power off" id="connectBtn" type="button">
             <svg class="ico" viewBox="0 0 24 24"><use href="#i-power" /></svg>
-            <span id="connectLabel">Connect</span>
+            <span id="connectLabel"><span data-i18n="Connect">Connect</span></span>
           </button>
         </span>
       </header>
@@ -150,58 +169,58 @@
       <div class="notice" id="updateNotice" hidden>
         <svg class="ico" viewBox="0 0 24 24"><use href="#i-bolt" /></svg>
         <span id="updateText"></span>
-        <button class="btn btn-quiet" id="updateGet" type="button" hidden>Get it</button>
-        <button class="btn btn-quiet" id="updateInstall" type="button" hidden>Install now</button>
+        <button class="btn btn-quiet" id="updateGet" type="button" hidden><span data-i18n="Get it">Get it</span></button>
+        <button class="btn btn-quiet" id="updateInstall" type="button" hidden><span data-i18n="Install now">Install now</span></button>
       </div>
 
       <main>
         <section class="panel usage-panel" data-panel="usage">
-          <div class="settings-heading"><span class="eyebrow">YOUR ACTIVITY</span><h1>Usage</h1><p>Model availability and the work recorded in this workspace.</p></div>
-          <p class="muted usage-status" id="usageStatus" role="status">Calculating recorded tool usage…</p><div class="usage-summary" id="usageSummary"></div>
-          <section class="usage-section"><h2>Token activity per day</h2><div id="usageHeatmap" class="usage-heatmap"></div><p class="muted">Estimated context processed per tool call · last 52 weeks</p></section>
-          <section class="usage-section"><h2>Cost estimate per day</h2>
-            <details id="usageFormulaDetails"><summary>Edit cost formula</summary>
+          <div class="settings-heading"><span class="eyebrow"><span data-i18n="YOUR ACTIVITY">YOUR ACTIVITY</span></span><h1><span data-i18n="Usage">Usage</span></h1><p><span data-i18n="Model availability and the work recorded in this workspace.">Model availability and the work recorded in this workspace.</span></p></div>
+          <p class="muted usage-status" id="usageStatus" role="status"><span data-i18n="Calculating recorded tool usage…">Calculating recorded tool usage…</span></p><div class="usage-summary" id="usageSummary"></div>
+          <section class="usage-section"><h2><span data-i18n="Token activity per day">Token activity per day</span></h2><div id="usageHeatmap" class="usage-heatmap"></div><p class="muted"><span data-i18n="Estimated context processed per tool call · last 52 weeks">Estimated context processed per tool call · last 52 weeks</span></p></section>
+          <section class="usage-section"><h2><span data-i18n="Cost estimate per day">Cost estimate per day</span></h2>
+            <details id="usageFormulaDetails"><summary><span data-i18n="Edit cost formula">Edit cost formula</span></summary>
             <p id="usageFormula" class="muted"></p>
-            <p class="muted">Automatic baselines use Standard short-context cached-input prices, checked 5 September 2026: <a href="https://developers.openai.com/api/docs/models/gpt-5.6-sol" target="_blank" rel="noopener noreferrer">GPT-5.6 Sol</a>, <a href="https://developers.openai.com/api/docs/models/gpt-6-astra" target="_blank" rel="noopener noreferrer">GPT-6 Astra</a>, <a href="https://developers.openai.com/api/docs/models/gpt-5.5" target="_blank" rel="noopener noreferrer">GPT-5.5</a>. These are editable cost comparisons, not actual bills.</p>
-            <label class="setting"><span class="setting-text"><b>Context times unique tool calls, divided by</b><em>Changes estimated tokens and costs.</em></span><input id="usageDivisor" aria-label="Usage token divisor" type="number" min="0.01" step="0.01" value="2" /></label>
-            <label class="setting"><span class="setting-text"><b>Cached-input cost multiplier</b><em>Applied after each model's cached-input rate.</em></span><input id="usageMultiplier" aria-label="Cached-input cost multiplier" type="number" min="0" step="0.01" value="1.2" /></label>
+            <p class="muted"><span data-i18n="Automatic baselines use Standard short-context cached-input prices, checked 5 September 2026:">Automatic baselines use Standard short-context cached-input prices, checked 5 September 2026:</span> <a href="https://developers.openai.com/api/docs/models/gpt-5.6-sol" target="_blank" rel="noopener noreferrer">GPT-5.6 Sol</a>, <a href="https://developers.openai.com/api/docs/models/gpt-6-astra" target="_blank" rel="noopener noreferrer">GPT-6 Astra</a>, <a href="https://developers.openai.com/api/docs/models/gpt-5.5" target="_blank" rel="noopener noreferrer">GPT-5.5</a><span data-i18n=". These are editable cost comparisons, not actual bills.">. These are editable cost comparisons, not actual bills.</span></p>
+            <label class="setting"><span class="setting-text"><b><span data-i18n="Context times unique tool calls, divided by">Context times unique tool calls, divided by</span></b><em><span data-i18n="Changes estimated tokens and costs.">Changes estimated tokens and costs.</span></em></span><input id="usageDivisor" aria-label="Usage token divisor" type="number" min="0.01" step="0.01" value="2" /></label>
+            <label class="setting"><span class="setting-text"><b><span data-i18n="Cached-input cost multiplier">Cached-input cost multiplier</span></b><em><span data-i18n="Applied after each model's cached-input rate.">Applied after each model's cached-input rate.</span></em></span><input id="usageMultiplier" aria-label="Cached-input cost multiplier" data-i18n-aria-label="Cached-input cost multiplier" type="number" min="0" step="0.01" value="1.2" /></label>
             <div id="usageRates"></div></details>
-            <p id="usageCost" class="muted">Set per-model cached-input rates to compare costs.</p><div id="usageDays"></div>
+            <p id="usageCost" class="muted"><span data-i18n="Set per-model cached-input rates to compare costs.">Set per-model cached-input rates to compare costs.</span></p><div id="usageDays"></div>
           </section>
-          <section class="usage-section"><h2>Remaining usage per model <button class="btn" id="refreshUsage" type="button">Refresh</button></h2><p class="muted">Reported by ChatGPT. Shared pools and feature quotas are listed separately. Missing data means not reported.</p><div id="modelUsage"></div></section>
+          <section class="usage-section"><h2><span data-i18n="Remaining usage per model">Remaining usage per model</span> <button class="btn" id="refreshUsage" type="button"><span data-i18n="Refresh">Refresh</span></button></h2><p class="muted"><span data-i18n="Reported by ChatGPT. Shared pools and feature quotas are listed separately. Missing data means not reported.">Reported by ChatGPT. Shared pools and feature quotas are listed separately. Missing data means not reported.</span></p><div id="modelUsage"></div></section>
         </section>
         <!-- ============================================================ Home -->
         <section class="panel" data-panel="home">
-          <div class="settings-heading"><h1>Workspace</h1><p>Choose what ChatGPT can access and keep your connection healthy.</p></div>
+          <div class="settings-heading"><h1><span data-i18n="Workspace">Workspace</span></h1><p><span data-i18n="Choose what ChatGPT can access and keep your connection healthy.">Choose what ChatGPT can access and keep your connection healthy.</span></p><p class="muted" data-i18n="Local edition: upstream automatic updates are disabled to preserve your customizations.">Local edition: upstream automatic updates are disabled to preserve your customizations.</p></div>
           <div class="top">
             <!-- ------------------------------------------------- permissions -->
             <section class="card">
               <h2>
-                Permissions
+                <span data-i18n="Permissions">Permissions</span>
                 <span class="acts">
                   <button class="btn" id="readOnlyBtn" type="button">
-                    <svg class="ico" viewBox="0 0 24 24"><use href="#i-lock" /></svg>Read-only
+                    <svg class="ico" viewBox="0 0 24 24"><use href="#i-lock" /></svg><span data-i18n="Read-only">Read-only</span>
                   </button>
                 </span>
               </h2>
               <div class="scroll">
                 <div id="groups"></div>
                 <div class="desktop-access" id="desktopAccess" hidden>
-                  <strong id="desktopAccessTitle">Desktop access needs attention</strong>
+                  <strong id="desktopAccessTitle"><span data-i18n="Desktop access needs attention">Desktop access needs attention</span></strong>
                   <p id="desktopAccessDetail"></p>
-                  <button class="btn btn-solid" id="requestDesktopAccessibility" type="button">Request Accessibility</button>
+                  <button class="btn btn-solid" id="requestDesktopAccessibility" type="button"><span data-i18n="Request Accessibility">Request Accessibility</span></button>
                   <button
                     class="btn"
                     id="openDesktopScreen"
                     type="button"
                     data-link="x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-                  >Open Screen Recording settings</button>
+                  ><span data-i18n="Open Screen Recording settings">Open Screen Recording settings</span></button>
                   <button
                     class="btn"
                     id="openDesktopAccessibility"
                     type="button"
                     data-link="x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-                  >Open Accessibility settings</button>
+                  ><span data-i18n="Open Accessibility settings">Open Accessibility settings</span></button>
                 </div>
               </div>
             </section>
@@ -209,18 +228,18 @@
             <!-- ----------------------------------------------------- folders -->
             <section class="card" id="foldersCard">
               <h2>
-                Folders
+                <span data-i18n="Folders">Folders</span>
                 <span class="acts">
                   <button class="btn" id="addFolder" type="button">
-                    <svg class="ico" viewBox="0 0 24 24"><use href="#i-plus" /></svg>Add
+                    <svg class="ico" viewBox="0 0 24 24"><use href="#i-plus" /></svg><span data-i18n="Add">Add</span>
                   </button>
                 </span>
               </h2>
               <div class="scroll">
                 <div id="rootList"></div>
                 <p class="empty" id="rootsEmpty">
-                  Nothing shared yet. Press Add or drop a folder here. ChatGPT sees short names
-                  like <code>/project</code> — your real system paths are never sent.
+                  <span data-i18n="Nothing shared yet. Press Add or drop a folder here. ChatGPT sees short names like">Nothing shared yet. Press Add or drop a folder here. ChatGPT sees short names
+                  like</span> <code>/project</code> <span data-i18n="— your real system paths are never sent.">— your real system paths are never sent.</span>
                 </p>
               </div>
             </section>
@@ -228,18 +247,18 @@
             <!-- ------------------------------------------------------ health -->
             <section class="card">
               <h2>
-                Health
+                <span data-i18n="Health">Health</span>
                 <span class="acts">
                   <button class="btn" id="runChecks" type="button">
                     <svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>
-                    <span id="runChecksLabel">Run checks</span>
+                    <span id="runChecksLabel"><span data-i18n="Run checks">Run checks</span></span>
                   </button>
                 </span>
               </h2>
               <div class="scroll">
                 <div class="big">
-                  <div><b id="bigHandshake">—</b><span>verified link</span></div>
-                  <div><b id="bigRequest">—</b><span>last ChatGPT call</span></div>
+                  <div><b id="bigHandshake">—</b><span><span data-i18n="verified link">verified link</span></span></div>
+                  <div><b id="bigRequest">—</b><span><span data-i18n="last ChatGPT call">last ChatGPT call</span></span></div>
                 </div>
                 <div class="facts" id="facts"></div>
                 <div class="checks" id="checksBox" hidden>
@@ -258,11 +277,11 @@
           <!-- ---------------------------------------------------- activity -->
           <section class="card">
             <h2>
-              Activity
+              <span data-i18n="Activity">Activity</span>
               <span class="acts">
                 <span class="problems" id="homeProblems" hidden></span>
                 <button class="btn" id="copyLog" type="button">
-                  <svg class="ico" viewBox="0 0 24 24"><use href="#i-copy" /></svg>Copy
+                  <svg class="ico" viewBox="0 0 24 24"><use href="#i-copy" /></svg><span data-i18n="Copy">Copy</span>
                 </button>
               </span>
             </h2>
@@ -273,14 +292,23 @@
         <!-- =========================================================== Setup -->
         <section class="panel scroll" data-panel="setup">
           <div class="sheet">
-            <div class="settings-heading"><h1>Setup</h1><p>Connect your workspace to ChatGPT.</p></div>
+            <div class="settings-heading"><h1><span data-i18n="Setup">Setup</span></h1><p><span data-i18n="Connect your workspace to ChatGPT.">Connect your workspace to ChatGPT.</span></p></div>
+            <div class="setup-method field">
+              <label for="tunnelKind"><span data-i18n="Method">Method</span></label>
+              <select id="tunnelKind">
+                <option value="openai" data-i18n="OpenAI Secure MCP Tunnel (recommended)">OpenAI Secure MCP Tunnel (recommended)</option>
+                <option value="cloudflared" data-i18n="Quick start — no tunnel ID or API key">Quick start — no tunnel ID or API key</option>
+                <option value="manual" data-i18n="Local only — I run my own tunnel">Local only — I run my own tunnel</option>
+              </select>
+              <p class="hint" id="methodHint"></p>
+            </div>
             <div class="lede">
-              <p>
-                Six steps, once. Custom MCP apps need ChatGPT <strong>Developer mode</strong> on the
+              <div class="setup-guidance"><p data-i18n="Follow the highlighted step. Progress is detected automatically.">Follow the highlighted step. Progress is detected automatically.</p><span id="setupProgress" class="tag"></span><details class="setup-requirements"><summary data-i18n="Details">Details</summary><p>
+                <span data-i18n="Six steps, once. Custom MCP apps need ChatGPT">Six steps, once. Custom MCP apps need ChatGPT</span> <strong><span data-i18n="Developer mode">Developer mode</span></strong> <span data-i18n="on the web. Full write/modify MCP is currently available to Business, Enterprise and Edu; Pro custom MCP is limited to read/fetch access.">on the
                 web. Full write/modify MCP is currently available to Business, Enterprise and Edu;
-                Pro custom MCP is limited to read/fetch access.
-              </p>
-              <button class="btn" id="wizExpand" type="button" hidden>Show all steps</button>
+                Pro custom MCP is limited to read/fetch access.</span>
+              </p></details></div>
+              <button class="btn" id="wizExpand" type="button" hidden><span data-i18n="Show all steps">Show all steps</span></button>
             </div>
 
             <ol class="wizard" id="wizard">
@@ -290,17 +318,17 @@
                   <svg class="ico tick" viewBox="0 0 24 24"><use href="#i-check" /></svg>
                 </div>
                 <div class="step-body">
-                  <h3>Pick a folder to share</h3>
+                  <h3><span data-i18n="Pick a folder to share">Pick a folder to share</span></h3>
                   <p>
-                    Nothing outside the folders you approve is reachable. Do this first — the tunnel
-                    will not start with nothing to serve.
+                    <span data-i18n="Nothing outside the folders you approve is reachable. Do this first — the tunnel will not start with nothing to serve.">Nothing outside the folders you approve is reachable. Do this first — the tunnel
+                    will not start with nothing to serve.</span>
                   </p>
                   <div class="step-actions">
                     <button class="btn btn-solid" id="wizAddFolder" type="button">
-                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-folder" /></svg>Choose folder
+                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-folder" /></svg><span data-i18n="Choose folder">Choose folder</span>
                     </button>
-                    <button class="btn" id="wizManageFolders" type="button">Manage folders</button>
-                    <span class="chosen" id="wizFolders">None yet</span>
+                    <button class="btn" id="wizManageFolders" type="button"><span data-i18n="Manage folders">Manage folders</span></button>
+                    <span class="chosen" id="wizFolders"><span data-i18n="None yet">None yet</span></span>
                   </div>
                 </div>
               </li>
@@ -311,11 +339,11 @@
                   <svg class="ico tick" viewBox="0 0 24 24"><use href="#i-check" /></svg>
                 </div>
                 <div class="step-body">
-                  <h3>Create a tunnel</h3>
+                  <h3><span data-i18n="Create a tunnel">Create a tunnel</span></h3>
                   <p>
-                    Open <strong>Tunnels</strong> on the OpenAI platform and create one. Pick the
-                    <strong>same workspace you use in ChatGPT</strong> — a tunnel in another
-                    workspace will not show up later. Then copy its ID.
+                    <span data-i18n="Open">Open</span> <strong>Tunnels</strong> <span data-i18n="on the OpenAI platform and create one. Pick the">on the OpenAI platform and create one. Pick the</span>
+                    <strong><span data-i18n="same workspace you use in ChatGPT">same workspace you use in ChatGPT</span></strong> <span data-i18n="— a tunnel in another workspace will not show up later. Then copy its ID.">— a tunnel in another
+                    workspace will not show up later. Then copy its ID.</span>
                   </p>
                   <div class="step-actions">
                     <button
@@ -323,11 +351,11 @@
                       type="button"
                       data-link="https://platform.openai.com/settings/organization/tunnels"
                     >
-                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg>Open Tunnels
+                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg><span data-i18n="Open Tunnels">Open Tunnels</span>
                     </button>
                   </div>
                   <div class="field">
-                    <label for="tunnelId">Tunnel ID — Core connector</label>
+                    <label for="tunnelId"><span data-i18n="Tunnel ID — Core connector">Tunnel ID — Core connector</span></label>
                     <input
                       id="tunnelId"
                       type="text"
@@ -339,7 +367,7 @@
                        second tunnel of its own. Hidden unless desktop permissions are on, so
                        nobody is asked to create a tunnel for a feature they never enabled. -->
                   <div class="field" id="desktopTunnelField" hidden>
-                    <label for="desktopTunnelId">Tunnel ID — Desktop connector <span class="tag">optional</span></label>
+                    <label for="desktopTunnelId"><span data-i18n="Tunnel ID — Desktop connector">Tunnel ID — Desktop connector</span> <span class="tag"><span data-i18n="optional">optional</span></span></label>
                     <input
                       id="desktopTunnelId"
                       type="text"
@@ -347,9 +375,9 @@
                       placeholder="tunnel_0123456789abcdef0123456789abcdef"
                     />
                     <p class="hint">
-                      Screen and mouse/keyboard control are a separate connector, so they need a
+                      <span data-i18n="Screen and mouse/keyboard control are a separate connector, so they need a second tunnel. Create another one and paste its ID here. Leave it empty to keep desktop control off in ChatGPT.">Screen and mouse/keyboard control are a separate connector, so they need a
                       second tunnel. Create another one and paste its ID here. Leave it empty to
-                      keep desktop control off in ChatGPT.
+                      keep desktop control off in ChatGPT.</span>
                     </p>
                   </div>
                 </div>
@@ -361,12 +389,12 @@
                   <svg class="ico tick" viewBox="0 0 24 24"><use href="#i-check" /></svg>
                 </div>
                 <div class="step-body">
-                  <h3>Create an API key</h3>
+                  <h3><span data-i18n="Create an API key">Create an API key</span></h3>
                   <p>
-                    Create a key of type <strong>Restricted</strong> and give it only
-                    <strong>Tunnels: Read</strong> and <strong>Tunnels: Use</strong>. Leave
-                    everything else on <em>None</em>. Copy it once — the platform will not show it
-                    again.
+                    <span data-i18n="Create a key of type">Create a key of type</span> <strong><span data-i18n="Restricted">Restricted</span></strong> <span data-i18n="and give it only">and give it only</span>
+                    <strong><span data-i18n="Tunnels: Read">Tunnels: Read</span></strong> <span data-i18n="and">and</span> <strong><span data-i18n="Tunnels: Use">Tunnels: Use</span></strong><span data-i18n=". Leave everything else on">. Leave
+                    everything else on</span> <em><span data-i18n="None">None</span></em><span data-i18n=". Copy it once — the platform will not show it again.">. Copy it once — the platform will not show it
+                    again.</span>
                   </p>
                   <div class="step-actions">
                     <button
@@ -374,15 +402,15 @@
                       type="button"
                       data-link="https://platform.openai.com/settings/organization/api-keys"
                     >
-                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg>Open API keys
+                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg><span data-i18n="Open API keys">Open API keys</span>
                     </button>
                   </div>
                   <div class="field">
-                    <label for="apiKey">Tunnel API key</label>
+                    <label for="apiKey"><span data-i18n="Tunnel API key">Tunnel API key</span></label>
                     <input id="apiKey" type="password" spellcheck="false" placeholder="sk-…" autocomplete="off" />
                     <p class="hint" id="apiKeyState"></p>
                     <div class="step-actions">
-                      <button class="btn" id="removeApiKey" type="button">Remove stored API key</button>
+                      <button class="btn" id="removeApiKey" type="button"><span data-i18n="Remove stored API key">Remove stored API key</span></button>
                     </div>
                   </div>
                 </div>
@@ -394,13 +422,13 @@
                   <svg class="ico tick" viewBox="0 0 24 24"><use href="#i-check" /></svg>
                 </div>
                 <div class="step-body">
-                  <h3>Start the tunnel</h3>
+                  <h3><span data-i18n="Start the tunnel">Start the tunnel</span></h3>
                   <p id="backgroundRunningCopy">
-                    Leave it running while you use the connector. It stays available when you close
-                    the window.
+                    <span data-i18n="Leave it running while you use the connector. It stays available when you close the window.">Leave it running while you use the connector. It stays available when you close
+                    the window.</span>
                   </p>
                   <div class="step-actions">
-                    <button class="btn btn-solid" id="wizConnect" type="button">Connect</button>
+                    <button class="btn btn-solid" id="wizConnect" type="button"><span data-i18n="Connect">Connect</span></button>
                     <span class="chosen" id="wizStatus"></span>
                   </div>
                 </div>
@@ -412,21 +440,21 @@
                   <svg class="ico tick" viewBox="0 0 24 24"><use href="#i-check" /></svg>
                 </div>
                 <div class="step-body">
-                  <h3>Add it in ChatGPT</h3>
+                  <h3><span data-i18n="Add it in ChatGPT">Add it in ChatGPT</span></h3>
                   <p>
-                    Turn on <strong>Developer mode</strong> in ChatGPT — currently under
-                    <em>Settings → Apps → Advanced settings</em>, with workspace-managed plans
+                    <span data-i18n="Turn on">Turn on</span> <strong><span data-i18n="Developer mode">Developer mode</span></strong> <span data-i18n="in ChatGPT — currently under">in ChatGPT — currently under</span>
+                    <em><span data-i18n="Settings → Apps → Advanced settings">Settings → Apps → Advanced settings</span></em><span data-i18n=", with workspace-managed plans also exposing custom apps from their Apps area. Then create one app per card below — the required one, plus the optional desktop one if you want it. Each card is a separate app in ChatGPT:">, with workspace-managed plans
                     also exposing custom apps from their Apps area. Then create one app per card
                     below — the required one, plus the optional desktop one if you want it. Each
-                    card is a separate app in ChatGPT:
+                    card is a separate app in ChatGPT:</span>
                   </p>
                   <ul class="ticks">
-                    <li>Use the exact name and description from the card — copy them, do not invent your own.</li>
+                    <li><span data-i18n="Use the exact name and description from the card — copy them, do not invent your own.">Use the exact name and description from the card — copy them, do not invent your own.</span></li>
                     <li id="chatgptConn"></li>
                     <li>
-                      For authentication, scroll to the very bottom and pick
-                      <strong>No authentication</strong>. This app is protected by a secret address,
-                      not by a login.
+                      <span data-i18n="For authentication, scroll to the very bottom and pick">For authentication, scroll to the very bottom and pick</span>
+                      <strong><span data-i18n="No authentication">No authentication</span></strong><span data-i18n=". This app is protected by a secret address, not by a login.">. This app is protected by a secret address,
+                      not by a login.</span>
                     </li>
                   </ul>
                   <!-- One card per connector. The name and description are what ChatGPT matches
@@ -434,13 +462,13 @@
                        given as copyable text rather than described. -->
                   <div class="connectors" id="connectorCards"></div>
                   <div class="plugin-permission-step">
-                    <strong>Before you start: choose “Allow all actions”</strong>
-                    <p>In ChatGPT, open Settings → Plugins (or Apps), select this plugin, and set its action permissions to <b>Allow all actions</b>. Repeat for the Desktop plugin if you added it.</p>
-                    <p>This lets ChatGPT use the plugin without asking for each action. Otherwise, approval prompts can pause Goal, Loop and agent tasks. Your folder and tool permissions in this app still apply.</p>
+                    <strong><span data-i18n="Before you start: choose “Allow all actions”">Before you start: choose “Allow all actions”</span></strong>
+                    <p><span data-i18n="In ChatGPT, open Settings → Plugins (or Apps), select this plugin, and set its action permissions to">In ChatGPT, open Settings → Plugins (or Apps), select this plugin, and set its action permissions to</span> <b><span data-i18n="Allow all actions">Allow all actions</span></b><span data-i18n=". Repeat for the Desktop plugin if you added it.">. Repeat for the Desktop plugin if you added it.</span></p>
+                    <p><span data-i18n="This lets ChatGPT use the plugin without asking for each action. Otherwise, approval prompts can pause Goal, Loop and agent tasks. Your folder and tool permissions in this app still apply.">This lets ChatGPT use the plugin without asking for each action. Otherwise, approval prompts can pause Goal, Loop and agent tasks. Your folder and tool permissions in this app still apply.</span></p>
                   </div>
                   <div class="step-actions">
                     <button class="btn btn-solid" type="button" data-link="https://chatgpt.com/#settings/Apps">
-                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg>Open Apps
+                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg><span data-i18n="Open Apps">Open Apps</span>
                     </button>
                     <span class="chosen" id="wizChatgpt"></span>
                   </div>
@@ -459,29 +487,29 @@
                   <svg class="ico tick" viewBox="0 0 24 24"><use href="#i-check" /></svg>
                 </div>
                 <div class="step-body">
-                  <h3>Add the Chrome extension</h3>
+                  <h3><span data-i18n="Add the Chrome extension">Add the Chrome extension</span></h3>
                   <p>
-                    Open <code>chrome://extensions</code>, turn on <strong>Developer mode</strong>,
-                    choose <strong>Load unpacked</strong> and pick the folder the button opens. It
-                    pairs with this app by itself — there is no code to type.
+                    <span data-i18n="Open">Open</span> <code>chrome://extensions</code><span data-i18n=", turn on">, turn on</span> <strong><span data-i18n="Developer mode">Developer mode</span></strong><span data-i18n=", choose">,
+                    choose</span> <strong><span data-i18n="Load unpacked">Load unpacked</span></strong> <span data-i18n="and pick the folder the button opens. It pairs with this app by itself — there is no code to type.">and pick the folder the button opens. It
+                    pairs with this app by itself — there is no code to type.</span>
                   </p>
                   <p class="hint is-required">
-                    <strong>Required for sub-agents:</strong> the companion extension must be loaded
+                    <strong><span data-i18n="Required for sub-agents:">Required for sub-agents:</span></strong> <span data-i18n="the companion extension must be loaded and connected in ChatGPT. Without it, Chat On Steroids cannot identify, open or coordinate worker chats.">the companion extension must be loaded
                     and connected in ChatGPT. Without it, Chat On Steroids cannot identify, open or
-                    coordinate worker chats.
+                    coordinate worker chats.</span>
                   </p>
                   <div class="step-actions">
                     <button class="btn btn-solid" id="bridgeFolder" type="button">
-                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-folder" /></svg>Open extension folder
+                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-folder" /></svg><span data-i18n="Open extension folder">Open extension folder</span>
                     </button>
                     <button
                       class="btn"
                       id="bridgeDownload"
                       type="button"
                     >
-                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg>Download extension ZIP
+                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg><span data-i18n="Download extension ZIP">Download extension ZIP</span>
                     </button>
-                    <button class="btn" id="bridgeUnpair" type="button">Disconnect browser</button>
+                    <button class="btn" id="bridgeUnpair" type="button"><span data-i18n="Disconnect browser">Disconnect browser</span></button>
                     <span class="chosen" id="bridgeState"></span>
                   </div>
                   <p class="hint" id="extensionPath"></p>
@@ -492,33 +520,23 @@
             <details class="advanced">
               <summary>
                 <svg class="ico sum-chev" viewBox="0 0 24 24"><use href="#i-chev" /></svg>
-                Advanced — method, program, startup
+                <span data-i18n="Advanced — method, program, startup">Advanced — method, program, startup</span>
               </summary>
 
               <div class="field">
-                <label for="tunnelKind">Method</label>
-                <select id="tunnelKind">
-                  <option value="openai">OpenAI Secure MCP Tunnel (recommended)</option>
-                  <option value="cloudflared">Cloudflare quick tunnel</option>
-                  <option value="manual">Local only — I run my own tunnel</option>
-                </select>
-                <p class="hint" id="methodHint"></p>
-              </div>
-
-              <div class="field">
-                <label for="binaryPath">Tunnel program</label>
+                <label for="binaryPath"><span data-i18n="Tunnel program">Tunnel program</span></label>
                 <div class="row-inline">
                   <input id="binaryPath" type="text" spellcheck="false" placeholder="Bundled with this app" readonly />
-                  <button class="btn btn-solid" id="pickBinary" type="button">Browse…</button>
+                  <button class="btn btn-solid" id="pickBinary" type="button"><span data-i18n="Browse…">Browse…</span></button>
                 </div>
                 <p class="hint" id="binaryState"></p>
               </div>
 
               <div class="field">
-                <label class="inline"><input type="checkbox" id="autoConnect" /> Connect automatically at startup</label>
-                <label class="inline"><input type="checkbox" id="minimizeToTray" /> <span id="minimizeToTrayCopy">Keep running when closed</span></label>
-                <label class="inline" id="privacyScreenshotsSetting"><input type="checkbox" id="privacyScreenshots" /> Privacy screenshots: default to the active window instead of the whole monitor</label>
-                <label class="inline"><input type="checkbox" id="developerMode" /> Developer mode: show turn boundaries and recovery events</label>
+                <label class="inline"><input type="checkbox" id="autoConnect" /> <span data-i18n="Connect automatically at startup">Connect automatically at startup</span></label>
+                <label class="inline"><input type="checkbox" id="minimizeToTray" /> <span id="minimizeToTrayCopy"><span data-i18n="Keep running when closed">Keep running when closed</span></span></label>
+                <label class="inline" id="privacyScreenshotsSetting"><input type="checkbox" id="privacyScreenshots" /> <span data-i18n="Privacy screenshots: default to the active window instead of the whole monitor">Privacy screenshots: default to the active window instead of the whole monitor</span></label>
+                <label class="inline"><input type="checkbox" id="developerMode" /> <span data-i18n="Developer mode: show turn boundaries and recovery events">Developer mode: show turn boundaries and recovery events</span></label>
               </div>
             </details>
           </div>
@@ -530,11 +548,11 @@
           <!-- ------------------------------------------------ session body -->
           <!-- The main session grid keeps transcript scrolling separate from the composer. -->
           <section class="card is-session">
-            <button id="chatSettingsBtn" type="button" hidden>Chat settings</button>
+            <button id="chatSettingsBtn" type="button" hidden><span data-i18n="Chat settings">Chat settings</span></button>
             <div class="subhead">
               <span class="seg" id="chatView" hidden>
-                <button class="is-sel" data-view="timeline" type="button">Timeline</button>
-                <button data-view="compact" type="button">Handoff</button>
+                <button class="is-sel" data-view="timeline" type="button"><span data-i18n="Timeline">Timeline</span></button>
+                <button data-view="compact" type="button"><span data-i18n="Handoff">Handoff</span></button>
               </span>
               <span class="subhead-note" id="chatState"></span>
 
@@ -548,7 +566,9 @@
                 <div id="timeline"></div>
                 <div id="inputQueue" class="input-queue" aria-live="polite"></div>
                 <p class="empty" id="timelineEmpty">
-                  <svg class="ico welcome-mark" viewBox="0 0 24 24"><use href="#i-mark" /></svg><span>What would you like to build?</span>
+                  <svg class="ico welcome-mark" viewBox="0 0 24 24"><use href="#i-mark" /></svg><span><span data-i18n="What would you like to build?">What would you like to build?</span></span>
+                  <small id="welcomeContext" data-i18n="Choose a project, describe a task, and review the result here.">Choose a project, describe a task, and review the result here.</small>
+                  <span class="welcome-actions"><button class="btn" type="button" data-workflow="implement" data-i18n="Implement a feature">Implement a feature</button><button class="btn" type="button" data-workflow="diagnose" data-i18n="Diagnose a problem">Diagnose a problem</button><button class="btn" type="button" data-workflow="review" data-i18n="Review changes">Review changes</button></span>
                 </p>
               </div>
 
@@ -556,9 +576,9 @@
               <div class="view" data-view="compact" hidden>
                 <div class="pane">
                   <h3 id="handoffHead" hidden>
-                    Latest handoff
+                    <span data-i18n="Latest handoff">Latest handoff</span>
                     <button class="btn" id="copyHandoff" type="button" hidden>
-                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-copy" /></svg>Copy
+                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-copy" /></svg><span data-i18n="Copy">Copy</span>
                     </button>
                   </h3>
                   <div id="handoffBox"></div>
@@ -575,252 +595,268 @@
                 the rest of the once-only work already lives.
               -->
               <div class="view" data-view="settings" hidden>
-                <div class="settings-heading"><h1>Agents &amp; automation</h1><p>Fine-tune your workspace and the way your agents work.</p><label class="sr-only" for="settingsSearch">Search settings</label><input id="settingsSearch" type="search" placeholder="Search settings…" /></div>
-                <p id="settingsSearchEmpty" class="muted" role="status" hidden>No settings match your search.</p>
-                <h2 class="settings-section-title">Continuation sources</h2>
+                <div class="settings-heading"><h1><span data-i18n="Agents &amp; automation">Agents &amp; automation</span></h1><p><span data-i18n="Fine-tune your workspace and the way your agents work.">Fine-tune your workspace and the way your agents work.</span></p><label class="sr-only" for="settingsSearch"><span data-i18n="Search settings">Search settings</span></label><input id="settingsSearch" type="search" placeholder="Search settings…" /></div>
+                <p id="settingsSearchEmpty" class="muted" role="status" hidden><span data-i18n="No settings match your search.">No settings match your search.</span></p>
+                <h2 class="settings-section-title"><span data-i18n="Continuation sources">Continuation sources</span></h2>
                 <div class="pane">
-                  <div class="setting"><span class="setting-text"><b>Goal response source</b><em>API is the most reliable. Offline uses completion markers and 200 prepared messages.</em></span><select id="goalBackend"><option value="api">API key · Most reliable</option><option value="chatgpt">Separate ChatGPT chat</option><option value="templates">Offline · No API cost</option></select></div>
-                  <div class="setting"><span class="setting-text"><b>Loop response source</b><em>Loop keeps going until you switch it off.</em></span><select id="loopBackend"><option value="api">API key · Most reliable</option><option value="chatgpt">Separate ChatGPT chat</option></select></div>
-                  <div class="setting"><span class="setting-text"><b>Goal, Loop and Plan model</b><em>Model for ChatGPT-generated messages and plans. Select GPT-5.6 and High below for planning.</em></span><select id="helperModel" aria-label="Goal, Loop and Plan model"></select></div>
-                  <div class="setting"><span class="setting-text"><b>Goal, Loop and Plan reasoning</b><em>Used with the ChatGPT model above; independent from API reasoning.</em></span><select id="helperReasoning" aria-label="Goal, Loop and Plan reasoning"></select></div>
-                  <label class="setting"><span class="setting-text"><b>Include tool details in Goal and handoffs</b><em>Goal receives recorded tool arguments and results. Handoff briefs retain tool details.</em></span><input id="goalIncludeToolCalls" type="checkbox" /></label>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="Goal response source">Goal response source</span></b><em><span data-i18n="API is the most reliable. Offline uses completion markers and 200 prepared messages.">API is the most reliable. Offline uses completion markers and 200 prepared messages.</span></em></span><select id="goalBackend"><option value="api" data-i18n="API key · Most reliable">API key · Most reliable</option><option value="chatgpt" data-i18n="Separate ChatGPT chat">Separate ChatGPT chat</option><option value="templates" data-i18n="Offline · No API cost">Offline · No API cost</option></select></div>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="Loop response source">Loop response source</span></b><em><span data-i18n="Loop keeps going until you switch it off.">Loop keeps going until you switch it off.</span></em></span><select id="loopBackend"><option value="api" data-i18n="API key · Most reliable">API key · Most reliable</option><option value="chatgpt" data-i18n="Separate ChatGPT chat">Separate ChatGPT chat</option></select></div>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="Goal, Loop and Plan model">Goal, Loop and Plan model</span></b><em><span data-i18n="Model for ChatGPT-generated messages and plans. Select GPT-5.6 and High below for planning.">Model for ChatGPT-generated messages and plans. Select GPT-5.6 and High below for planning.</span></em></span><select id="helperModel" aria-label="Goal, Loop and Plan model" data-i18n-aria-label="Goal, Loop and Plan model"></select></div>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="Goal, Loop and Plan reasoning">Goal, Loop and Plan reasoning</span></b><em><span data-i18n="Used with the ChatGPT model above; independent from API reasoning.">Used with the ChatGPT model above; independent from API reasoning.</span></em></span><select id="helperReasoning" aria-label="Goal, Loop and Plan reasoning" data-i18n-aria-label="Goal, Loop and Plan reasoning"></select></div>
+                  <label class="setting"><span class="setting-text"><b><span data-i18n="Include tool details in Goal and handoffs">Include tool details in Goal and handoffs</span></b><em><span data-i18n="Goal receives recorded tool arguments and results. Handoff briefs retain tool details.">Goal receives recorded tool arguments and results. Handoff briefs retain tool details.</span></em></span><input id="goalIncludeToolCalls" type="checkbox" /></label>
                   </div>
-                <h2 class="settings-section-title">Keep the turn open</h2>
+                <h2 class="settings-section-title"><span data-i18n="Keep the turn open">Keep the turn open</span></h2>
                 <div class="pane">
-                  <label class="setting"><span class="setting-text"><b>Plan generation</b><em>Create staged tasks. ChatGPT uses the Goal, Loop and Plan model above; API uses the model and reasoning in API provider settings.</em></span><select id="planBackend"><option value="chatgpt">ChatGPT</option><option value="api">API provider</option></select></label>
-                  <label class="setting"><span class="setting-text"><b>Session finish</b><em>Ask Astra to keep the turn open for your next instruction. Tool changes refresh the connector automatically after 20 seconds.</em></span><input id="finishTool" type="checkbox" /></label>
-                  <div class="setting"><span class="setting-text"><b>When ChatGPT is wrapping up</b><em>Automatic follow-ups use your Loop instructions and selected Loop source.</em></span><select id="finishAction"><option value="notify">Notify me · Write or Generate Goal</option><option value="goal">Generate and inject Goal</option></select></div>
-                  <div class="setting"><span class="setting-text"><b>Requested notice</b><em>A request to the model, not a guaranteed countdown.</em></span><select id="finishLeadMinutes"><option value="3">3 minutes</option><option value="5">5 minutes</option></select></div>
+                  <label class="setting"><span class="setting-text"><b><span data-i18n="Plan generation">Plan generation</span></b><em><span data-i18n="Create staged tasks. ChatGPT uses the Goal, Loop and Plan model above; API uses the model and reasoning in API provider settings.">Create staged tasks. ChatGPT uses the Goal, Loop and Plan model above; API uses the model and reasoning in API provider settings.</span></em></span><select id="planBackend"><option value="chatgpt">ChatGPT</option><option value="api" data-i18n="API provider">API provider</option></select></label>
+                  <label class="setting"><span class="setting-text"><b><span data-i18n="Session finish">Session finish</span></b><em><span data-i18n="Ask Astra to keep the turn open for your next instruction. Tool changes refresh the connector automatically after 20 seconds.">Ask Astra to keep the turn open for your next instruction. Tool changes refresh the connector automatically after 20 seconds.</span></em></span><input id="finishTool" type="checkbox" /></label>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="When ChatGPT is wrapping up">When ChatGPT is wrapping up</span></b><em><span data-i18n="Automatic follow-ups use your Loop instructions and selected Loop source.">Automatic follow-ups use your Loop instructions and selected Loop source.</span></em></span><select id="finishAction"><option value="notify" data-i18n="Notify me · Write or Generate Goal">Notify me · Write or Generate Goal</option><option value="goal" data-i18n="Generate and inject Goal">Generate and inject Goal</option></select></div>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="Requested notice">Requested notice</span></b><em><span data-i18n="A request to the model, not a guaranteed countdown.">A request to the model, not a guaranteed countdown.</span></em></span><select id="finishLeadMinutes"><option value="3" data-i18n="3 minutes">3 minutes</option><option value="5" data-i18n="5 minutes">5 minutes</option></select></div>
                   </div>
-                <h2 class="settings-section-title">ChatGPT models</h2>
+                <h2 class="settings-section-title"><span data-i18n="ChatGPT models">ChatGPT models</span></h2>
                 <div class="pane">
-                  <div class="setting"><span class="setting-text"><b>Available ChatGPT models</b><em id="chatModelStatus">Read model choices from your account.</em></span><button class="btn" id="refreshChatModels" type="button">Refresh</button></div>
-                  <div class="setting"><span class="setting-text"><b>Default sub-agent model</b><em>Confirmed in ChatGPT before a worker starts.</em></span><select id="workerModel"><option value="" disabled>No observed choices</option></select></div>
-                  <div class="setting"><span class="setting-text"><b>Default sub-agent reasoning</b><em>Selected independently from the model.</em></span><select id="workerReasoning"><option value="" disabled>No observed choices</option></select></div>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="Available ChatGPT models">Available ChatGPT models</span></b><em id="chatModelStatus"><span data-i18n="Read model choices from your account.">Read model choices from your account.</span></em></span><button class="btn" id="refreshChatModels" type="button"><span data-i18n="Refresh">Refresh</span></button></div>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="Default sub-agent model">Default sub-agent model</span></b><em><span data-i18n="Confirmed in ChatGPT before a worker starts.">Confirmed in ChatGPT before a worker starts.</span></em></span><select id="workerModel"><option value="" disabled data-i18n="No observed choices">No observed choices</option></select></div>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="Default sub-agent reasoning">Default sub-agent reasoning</span></b><em><span data-i18n="Selected independently from the model.">Selected independently from the model.</span></em></span><select id="workerReasoning"><option value="" disabled data-i18n="No observed choices">No observed choices</option></select></div>
                   </div>
-                <h2 class="settings-section-title">Browser & history</h2>
+                <h2 class="settings-section-title"><span data-i18n="Browser &amp; history">Browser & history</span></h2>
                 <div class="pane">
-                  <label class="setting"><span class="setting-text"><b>Background chats</b><em>Keep app-created ChatGPT tabs in the background.</em></span><input id="backgroundChats" type="checkbox" /></label>
-                  <p class="muted">Keeps as many app chat tabs as your worker limit. Above that, the longest-idle chats close after one minute without work. Active turns and unsent drafts stay open.</p>
-                  <label class="setting"><span class="setting-text"><b>Overwrite ChatGPT tool rows</b><em>Show recorded local activity in the ChatGPT page.</em></span><input id="browserOverwrite" type="checkbox" disabled /></label>
-                  <label class="setting"><span class="setting-text"><b>Show durations in ChatGPT</b><em>Uses the same preference as the extension popup.</em></span><input id="browserDurations" type="checkbox" disabled /></label>
-                  <div class="setting"><span class="setting-text"><b>Browser preferences</b><em id="browserPreferencesStatus" role="status">Refresh to read the browser's current preferences.</em></span><button id="browserPreferencesRefresh" class="btn" type="button">Refresh browser preferences</button></div>
+                  <label class="setting"><span class="setting-text"><b><span data-i18n="Background chats">Background chats</span></b><em><span data-i18n="Keep app-created ChatGPT tabs in the background.">Keep app-created ChatGPT tabs in the background.</span></em></span><input id="backgroundChats" type="checkbox" /></label>
+                  <p class="muted"><span data-i18n="Keeps as many app chat tabs as your worker limit. Above that, the longest-idle chats close after one minute without work. Active turns and unsent drafts stay open.">Keeps as many app chat tabs as your worker limit. Above that, the longest-idle chats close after one minute without work. Active turns and unsent drafts stay open.</span></p>
+                  <label class="setting"><span class="setting-text"><b><span data-i18n="Overwrite ChatGPT tool rows">Overwrite ChatGPT tool rows</span></b><em><span data-i18n="Show recorded local activity in the ChatGPT page.">Show recorded local activity in the ChatGPT page.</span></em></span><input id="browserOverwrite" type="checkbox" disabled /></label>
+                  <label class="setting"><span class="setting-text"><b><span data-i18n="Show durations in ChatGPT">Show durations in ChatGPT</span></b><em><span data-i18n="Uses the same preference as the extension popup.">Uses the same preference as the extension popup.</span></em></span><input id="browserDurations" type="checkbox" disabled /></label>
+                  <div class="setting"><span class="setting-text"><b><span data-i18n="Browser preferences">Browser preferences</span></b><em id="browserPreferencesStatus" role="status"><span data-i18n="Refresh to read the browser's current preferences.">Refresh to read the browser's current preferences.</span></em></span><button id="browserPreferencesRefresh" class="btn" type="button"><span data-i18n="Refresh browser preferences">Refresh browser preferences</span></button></div>
                   <div class="setting">
                     <span class="setting-text">
-                      <b>Keep recordings</b>
-                      <em>Then delete them. 0 keeps everything. Recording itself is a permission.</em>
+                      <b><span data-i18n="Keep recordings">Keep recordings</span></b>
+                      <em><span data-i18n="Then delete them. 0 keeps everything. Recording itself is a permission.">Then delete them. 0 keeps everything. Recording itself is a permission.</span></em>
                     </span>
                     <input id="sessRetain" class="num" type="number" min="0" max="3650" step="1" />
-                    <span class="unit">days</span>
+                    <span class="unit"><span data-i18n="days">days</span></span>
                   </div>
                   <div class="setting">
                     <span class="setting-text">
-                      <b>Compact automatically</b>
+                      <b><span data-i18n="Compact automatically">Compact automatically</span></b>
                       <em id="autoCompactHint"></em>
                     </span>
                     <input id="autoCompactTokens" class="num" type="number" min="10000" max="4000000" step="10000" />
-                    <span class="unit">tokens</span>
+                    <span class="unit"><span data-i18n="tokens">tokens</span></span>
                     <span class="sw"><input type="checkbox" id="autoCompact" /><i></i></span>
                   </div>
                   </div>
-                <h2 class="settings-section-title">API provider</h2>
+                <h2 class="settings-section-title"><span data-i18n="API provider">API provider</span></h2>
                 <div class="pane">
                   <div class="field">
-                    <label for="goalKey">OpenRouter API key</label>
+                    <label for="goalKey"><span data-i18n="OpenRouter API key">OpenRouter API key</span></label>
                     <input id="goalKey" type="password" spellcheck="false" placeholder="sk-or-v1-…" autocomplete="off" />
                     <p class="hint" id="goalKeyState"></p>
                     <div class="step-actions">
-                      <button class="btn" id="goalKeyRemove" type="button">Remove stored key</button>
+                      <button class="btn" id="goalKeyRemove" type="button"><span data-i18n="Remove stored key">Remove stored key</span></button>
                       <button class="btn" type="button" data-link="https://openrouter.ai/settings/keys">
-                        <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg>Open OpenRouter keys
+                        <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg><span data-i18n="Open OpenRouter keys">Open OpenRouter keys</span>
                       </button>
                     </div>
                   </div>
                   <div class="setting">
                     <span class="setting-text">
-                      <b>Model</b>
+                      <b><span data-i18n="Model">Model</span></b>
                       <em id="goalModelName"></em>
                     </span>
-                    <button class="btn" id="goalPick" type="button">Select model</button>
+                    <button class="btn" id="goalPick" type="button"><span data-i18n="Select model">Select model</span></button>
                   </div>
 
                   <div class="field" id="goalModels" hidden>
                     <div id="goalModelList" class="goal-models"></div>
                     <p class="hint" id="goalModelsState"></p>
                     <div class="step-actions">
-                      <button class="btn" id="goalMore" type="button">Load 20 more</button>
+                      <button class="btn" id="goalMore" type="button"><span data-i18n="Load 20 more">Load 20 more</span></button>
                     </div>
                   </div>
 
                   <div class="setting">
                     <span class="setting-text">
-                      <b>Reasoning</b>
-                      <em>Default lets the provider decide, which is right for nearly every model. The rest cost more and take longer.</em>
+                      <b><span data-i18n="Reasoning">Reasoning</span></b>
+                      <em><span data-i18n="Default lets the provider decide, which is right for nearly every model. The rest cost more and take longer.">Default lets the provider decide, which is right for nearly every model. The rest cost more and take longer.</span></em>
                     </span>
                     <select id="goalReasoning">
-                      <option value="default">Default</option>
-                      <option value="minimal">Minimal</option>
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
+                      <option value="default" data-i18n="Default">Default</option>
+                      <option value="minimal" data-i18n="Minimal">Minimal</option>
+                      <option value="low" data-i18n="Low">Low</option>
+                      <option value="medium" data-i18n="Medium">Medium</option>
+                      <option value="high" data-i18n="High">High</option>
                     </select>
                   </div>
 
                   </div>
-                <h2 class="settings-section-title">Continuation prompts</h2>
+                <h2 class="settings-section-title"><span data-i18n="Continuation prompts">Continuation prompts</span></h2>
                 <div class="pane">
                   <div class="setting">
                     <span class="setting-text">
-                      <b>Goal prompt, no task</b>
-                      <em>Reads the goal from your messages and stops when it is complete.</em>
+                      <b><span data-i18n="Goal prompt, no task">Goal prompt, no task</span></b>
+                      <em><span data-i18n="Reads the goal from your messages and stops when it is complete.">Reads the goal from your messages and stops when it is complete.</span></em>
                     </span>
-                    <button class="btn" id="goalPromptEdit" type="button">Edit prompt</button>
+                    <button class="btn" id="goalPromptEdit" type="button"><span data-i18n="Edit prompt">Edit prompt</span></button>
                   </div>
 
                   <div class="field goal-prompt" id="goalPromptPanel" hidden>
-                    <label for="goalPrompt">Goal prompt, no task</label>
+                    <label for="goalPrompt"><span data-i18n="Goal prompt, no task">Goal prompt, no task</span></label>
                     <textarea id="goalPrompt" rows="14" spellcheck="false"></textarea>
-                    <p class="hint">Saved when you leave the editor. Keep <code>NO_REPLY</code> as the exact stop response.</p>
+                    <p class="hint"><span data-i18n="Saved when you leave the editor. Keep">Saved when you leave the editor. Keep</span> <code>NO_REPLY</code> <span data-i18n="as the exact stop response.">as the exact stop response.</span></p>
                     <div class="step-actions">
-                      <button class="btn" id="goalPromptReset" type="button">Restore default</button>
+                      <button class="btn" id="goalPromptReset" type="button"><span data-i18n="Restore default">Restore default</span></button>
                     </div>
                   </div>
 
                   <div class="setting">
                     <span class="setting-text">
-                      <b>Goal prompt, with a task</b>
-                      <em>Uses the objective saved in the chat controls. Stops when every requirement is met.</em>
+                      <b><span data-i18n="Goal prompt, with a task">Goal prompt, with a task</span></b>
+                      <em><span data-i18n="Uses the objective saved in the chat controls. Stops when every requirement is met.">Uses the objective saved in the chat controls. Stops when every requirement is met.</span></em>
                     </span>
-                    <button class="btn" id="goalObjectivePromptEdit" type="button">Edit prompt</button>
+                    <button class="btn" id="goalObjectivePromptEdit" type="button"><span data-i18n="Edit prompt">Edit prompt</span></button>
                   </div>
 
                   <div class="field goal-prompt" id="goalObjectivePromptPanel" hidden>
-                    <label for="goalObjectivePrompt">Goal prompt, with a task</label>
+                    <label for="goalObjectivePrompt"><span data-i18n="Goal prompt, with a task">Goal prompt, with a task</span></label>
                     <textarea id="goalObjectivePrompt" rows="14" spellcheck="false"></textarea>
-                    <p class="hint">Saved when you leave the editor. Keep <code>NO_REPLY</code> as the exact stop response.</p>
+                    <p class="hint"><span data-i18n="Saved when you leave the editor. Keep">Saved when you leave the editor. Keep</span> <code>NO_REPLY</code> <span data-i18n="as the exact stop response.">as the exact stop response.</span></p>
                     <div class="step-actions">
-                      <button class="btn" id="goalObjectivePromptReset" type="button">Restore default</button>
+                      <button class="btn" id="goalObjectivePromptReset" type="button"><span data-i18n="Restore default">Restore default</span></button>
                     </div>
                   </div>
 
                   <div class="setting">
                     <span class="setting-text">
-                      <b>Loop prompt</b>
-                      <em>Writes the next instruction after each answer, until you turn Loop off.</em>
+                      <b><span data-i18n="Loop prompt">Loop prompt</span></b>
+                      <em><span data-i18n="Writes the next instruction after each answer, until you turn Loop off.">Writes the next instruction after each answer, until you turn Loop off.</span></em>
                     </span>
-                    <button class="btn" id="goalLoopPromptEdit" type="button">Edit prompt</button>
+                    <button class="btn" id="goalLoopPromptEdit" type="button"><span data-i18n="Edit prompt">Edit prompt</span></button>
                   </div>
 
                   <div class="field goal-prompt" id="goalLoopPromptPanel" hidden>
-                    <label for="goalLoopPrompt">Loop prompt</label>
+                    <label for="goalLoopPrompt"><span data-i18n="Loop prompt">Loop prompt</span></label>
                     <textarea id="goalLoopPrompt" rows="14" spellcheck="false"></textarea>
-                    <p class="hint">Saved when you leave the editor. There is no stop response here - the app refuses one and asks again.</p>
+                    <p class="hint"><span data-i18n="Saved when you leave the editor. There is no stop response here - the app refuses one and asks again.">Saved when you leave the editor. There is no stop response here - the app refuses one and asks again.</span></p>
                     <div class="step-actions">
-                      <button class="btn" id="goalLoopPromptReset" type="button">Restore default</button>
+                      <button class="btn" id="goalLoopPromptReset" type="button"><span data-i18n="Restore default">Restore default</span></button>
                     </div>
                   </div>
 
                   </div>
-                <h2 class="settings-section-title">Workers & recovery</h2>
+                <h2 class="settings-section-title"><span data-i18n="Workers &amp; recovery">Workers & recovery</span></h2>
                 <div class="pane">
                   <div class="setting">
                     <span class="setting-text">
-                      <b>Sub-agent workers</b>
-                      <em>Requires the Chrome extension to be loaded and connected. This sets the most worker chats one run may open.</em>
+                      <b><span data-i18n="Sub-agent workers">Sub-agent workers</span></b>
+                      <em><span data-i18n="Requires the Chrome extension to be loaded and connected. This sets the most worker chats one run may open.">Requires the Chrome extension to be loaded and connected. This sets the most worker chats one run may open.</span></em>
                     </span>
                     <input id="maWorkers" class="num" type="number" min="1" max="8" step="1" />
-                    <span class="unit">max</span>
+                    <span class="unit"><span data-i18n="max">max</span></span>
                   </div>
 
                   <label class="setting">
                     <span class="setting-text">
-                      <b>Allow unattributed calls</b>
-                      <em>Run self-contained calls even when the extension cannot prove which chat sent them. Activity stays visible as Unattributed.</em>
+                      <b><span data-i18n="Allow unattributed calls">Allow unattributed calls</span></b>
+                      <em><span data-i18n="Run self-contained calls even when the extension cannot prove which chat sent them. Activity stays visible as Unattributed.">Run self-contained calls even when the extension cannot prove which chat sent them. Activity stays visible as Unattributed.</span></em>
                     </span>
                     <input id="allowUnattributedCalls" type="checkbox" />
                   </label>
 
                   <label class="setting">
                     <span class="setting-text">
-                      <b>Recover other chats’ tabs</b>
-                      <em>Restore missing or unresponsive work chats. Goal and Loop chats recover automatically.</em>
+                      <b><span data-i18n="Recover other chats’ tabs">Recover other chats’ tabs</span></b>
+                      <em><span data-i18n="Restore missing or unresponsive work chats. Goal and Loop chats recover automatically.">Restore missing or unresponsive work chats. Goal and Loop chats recover automatically.</span></em>
                     </span>
                     <input id="recoverAgentTabs" type="checkbox" />
                   </label>
 
                   <div id="swarmList"></div>
                   <div class="step-actions">
-                    <button class="btn" id="swarmReset" type="button">Clear swarm</button>
+                    <button class="btn" id="swarmReset" type="button"><span data-i18n="Clear swarm">Clear swarm</span></button>
                   </div>
                 </div>
               </div>
             </div>
-            <div class="composer-dock" id="composerDock"><div id="recoveryStatus" role="status" hidden></div><div id="taskPlanPreview" aria-label="Plan stages" hidden></div><div id="finishQueue" aria-label="Queued tasks" hidden></div><div id="activeGoalRow" hidden></div></div>
+            <div class="composer-dock" id="composerDock"><div id="recoveryStatus" role="status" hidden></div><div id="taskPlanPreview" aria-label="Plan stages" data-i18n-aria-label="Plan stages" hidden></div><div id="finishQueue" aria-label="Queued tasks" data-i18n-aria-label="Queued tasks" hidden></div><div id="activeGoalRow" hidden></div></div>
             <form class="composer" id="composer">
-              <label class="sr-only" for="chatInput">Message ChatGPT</label>
-              <div id="composerImages" class="composer-images" hidden></div><textarea id="chatInput" rows="1" maxlength="16000" placeholder="Ask anything…"></textarea>
+              <label class="sr-only" for="chatInput"><span data-i18n="Message ChatGPT">Message ChatGPT</span></label>
+              <div id="composerImages" class="composer-images" hidden></div><textarea id="chatInput" rows="1" maxlength="16000" placeholder="Ask anything…" data-i18n-placeholder="Ask anything…"></textarea>
               <div class="composer-toolbar">
-                <details class="composer-menu" id="attachmentMenu">
-                  <summary aria-label="Add attachments" title="Add attachments"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus" /></svg></summary>
+                <details class="composer-menu" id="workflowMenu">
+                  <summary><span data-i18n="Workflow">Workflow</span><span aria-hidden="true">⌄</span></summary>
                   <div class="composer-popover">
-                    <button id="attachImages" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-image" /></svg>Add images</button>
-                    <button id="composerFolder" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-folder" /></svg>Share a folder</button>
+                    <button type="button" data-workflow="implement" data-i18n="Implement a feature">Implement a feature</button>
+                    <button type="button" data-workflow="diagnose" data-i18n="Diagnose a problem">Diagnose a problem</button>
+                    <button type="button" data-workflow="review" data-i18n="Review changes">Review changes</button>
+                  </div>
+                </details>
+                <select hidden id="projectWorkflow" aria-label="Project workflow" data-i18n-aria-label="Project workflow" title="Add instructions to your draft; nothing is sent automatically." data-i18n-title="Add instructions to your draft; nothing is sent automatically.">
+                  <option value="" data-i18n="Workflow">Workflow</option>
+                  <option value="implement" data-i18n="Implement a feature">Implement a feature</option>
+                  <option value="diagnose" data-i18n="Diagnose a problem">Diagnose a problem</option>
+                  <option value="review" data-i18n="Review changes">Review changes</option>
+                </select>
+                <details class="composer-menu" id="attachmentMenu">
+                  <summary aria-label="Add attachments" data-i18n-aria-label="Add attachments" title="Add attachments" data-i18n-title="Add attachments"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus" /></svg></summary>
+                  <div class="composer-popover">
+                    <button id="attachImages" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-image" /></svg><span data-i18n="Add images">Add images</span></button>
+                    <button id="composerFolder" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-folder" /></svg><span data-i18n="Share a folder">Share a folder</span></button>
                   </div>
                 </details>
                 <div class="composer-options">
                   <details class="composer-menu" id="composerSettings">
-                    <summary aria-label="Chat options" title="Chat options"><svg class="ico" viewBox="0 0 24 24"><use href="#i-gear" /></svg></summary>
+                    <summary aria-label="Chat options" data-i18n-aria-label="Chat options" title="Chat options" data-i18n-title="Chat options"><svg class="ico" viewBox="0 0 24 24"><use href="#i-gear" /></svg></summary>
                     <div class="composer-popover">
-                      <div class="automation-switch" id="automationSwitch" role="radiogroup" aria-label="Chat mode">
-                        <button type="button" role="radio" aria-checked="true" data-mode="off" data-keep-menu="true">Off</button>
-                        <button type="button" role="radio" aria-checked="false" data-mode="goal" data-keep-menu="true">Goal</button>
-                        <button type="button" role="radio" aria-checked="false" data-mode="loop" data-keep-menu="true">Loop</button>
-                        </div><select hidden id="chatAutomation" aria-label="Chat automation"><option value="off">Off</option><option value="goal">Goal</option><option value="loop">Loop</option></select>
+                      <div class="automation-switch" id="automationSwitch" role="radiogroup" aria-label="Chat mode" data-i18n-aria-label="Chat mode">
+                        <button type="button" role="radio" aria-checked="true" data-mode="off" data-keep-menu="true"><span data-i18n="Off">Off</span></button>
+                        <button type="button" role="radio" aria-checked="false" data-mode="goal" data-keep-menu="true"><span data-i18n="Goal">Goal</span></button>
+                        <button type="button" role="radio" aria-checked="false" data-mode="loop" data-keep-menu="true"><span data-i18n="Loop">Loop</span></button>
+                        </div><select hidden id="chatAutomation" aria-label="Chat automation" data-i18n-aria-label="Chat automation"><option value="off" data-i18n="Off">Off</option><option value="goal" data-i18n="Goal">Goal</option><option value="loop" data-i18n="Loop">Loop</option></select>
               <div id="sessionControls" hidden>
                 <div class="session-controls-menu">
-                  <label for="sessionObjective">This chat's goal</label>
-                  <textarea id="sessionObjective" rows="3" maxlength="16000" placeholder="What should this chat achieve?"></textarea>
-                  <button id="saveSessionObjective" data-keep-menu="true" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check" /></svg><span>Save task</span></button>
-                  <select hidden id="sessionObjectiveMode" aria-label="Goal behavior"><option value="goal">Goal · stop when complete</option><option value="loop">Loop · keep going</option></select>
-                  <button id="createPlan" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-chat" /></svg><span>Create plan</span></button>
-                  <button id="queueAtFinish" type="button" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-clock" /></svg><span>Queue at Session finish</span></button>
-                  <button id="compactSession" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-copy" /></svg><span>Compact &amp; resume</span></button>
-                  <button id="cancelCompaction" type="button" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-x" /></svg><span>Cancel compaction</span></button>
+                  <label for="sessionObjective"><span data-i18n="This chat's goal">This chat's goal</span></label>
+                  <textarea id="sessionObjective" rows="3" maxlength="16000" placeholder="What should this chat achieve?" data-i18n-placeholder="What should this chat achieve?"></textarea>
+                  <p class="muted" data-i18n="Goal continues until complete. Loop continues until switched off. Off disables automatic follow-ups; use Stop to request stopping the current turn.">Goal continues until complete. Loop continues until switched off. Off disables automatic follow-ups; use Stop to request stopping the current turn.</p>
+                  <button id="saveSessionObjective" data-keep-menu="true" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check" /></svg><span><span data-i18n="Save task">Save task</span></span></button>
+                  <select hidden id="sessionObjectiveMode" aria-label="Goal behavior"><option value="goal" data-i18n="Goal · stop when complete">Goal · stop when complete</option><option value="loop" data-i18n="Loop · keep going">Loop · keep going</option></select>
+                  <button id="createPlan" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-chat" /></svg><span><span data-i18n="Create plan">Create plan</span></span></button>
+                  <button id="queueAtFinish" type="button" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-clock" /></svg><span><span data-i18n="Queue at Session finish">Queue at Session finish</span></span></button>
+                  <button id="compactSession" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-copy" /></svg><span><span data-i18n="Compact &amp; resume">Compact &amp; resume</span></span></button>
+                  <button id="cancelCompaction" type="button" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-x" /></svg><span><span data-i18n="Cancel compaction">Cancel compaction</span></span></button>
                   <p id="sessionControlStatus" role="status"></p>
                 </div>
               </div>
                     </div>
                   </details>
                 <div class="context-meter" id="contextMeter">
-                  <button type="button" id="contextMeterButton" aria-label="Estimated session context" aria-expanded="false" aria-controls="contextMeterInfo">
+                  <button type="button" id="contextMeterButton" aria-label="Estimated session context" data-i18n-aria-label="Estimated session context" aria-expanded="false" aria-controls="contextMeterInfo">
                     <svg viewBox="0 0 16 16" aria-hidden="true"><circle class="context-track" cx="8" cy="8" r="6"/><circle id="contextMeterArc" cx="8" cy="8" r="6" stroke-dasharray="0 37.7"/></svg>
                   </button>
-                  <div id="contextMeterInfo" role="tooltip">Session context · estimated</div>
+                  <div id="contextMeterInfo" role="tooltip"><span data-i18n="Session context · estimated">Session context · estimated</span></div>
                 </div>
                 </div>
                 <details class="composer-menu model-menu" id="modelMenu">
-                  <summary><span id="composerModelLabel">Model</span><svg class="ico picker-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
+                  <summary><span id="composerModelLabel"><span data-i18n="Model">Model</span></span><svg class="ico picker-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
                   <div class="composer-popover">
-                    <div class="power-header"><div class="power-caption"><strong id="composerPowerTitle">Choose a level</strong><span id="composerPowerModel">Observed models</span></div><button class="btn model-reload" id="refreshComposerModels" data-keep-menu="true" type="button" title="Reload ChatGPT models" aria-label="Reload ChatGPT models"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7l-3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+                    <div class="power-header"><div class="power-caption"><strong id="composerPowerTitle"><span data-i18n="Choose a level">Choose a level</span></strong><span id="composerPowerModel"><span data-i18n="Observed models">Observed models</span></span></div><button class="btn model-reload" id="refreshComposerModels" data-keep-menu="true" type="button" title="Reload ChatGPT models" data-i18n-title="Reload ChatGPT models" aria-label="Reload ChatGPT models" data-i18n-aria-label="Reload ChatGPT models"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7l-3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
                     </div><p id="composerModelStatus" class="muted" role="status" hidden></p>
-                    <div id="composerModelChoices" role="group" aria-label="Model"></div><div id="composerPowerChoices" role="group" aria-label="Thinking effort"></div><label hidden>Model<select id="composerModel" aria-label="ChatGPT model"><option value="" disabled>No observed choices</option></select></label>
-                    <label hidden>Reasoning<select id="composerReasoning" aria-label="Reasoning effort"><option value="" disabled>No observed choices</option></select></label>
+                    <div id="composerModelChoices" role="group" aria-label="Model" data-i18n-aria-label="Model"></div><div id="composerPowerChoices" role="group" aria-label="Thinking effort"></div><label hidden><span data-i18n="Model">Model</span><select id="composerModel" aria-label="ChatGPT model"><option value="" disabled data-i18n="No observed choices">No observed choices</option></select></label>
+                    <label hidden><span data-i18n="Reasoning">Reasoning</span><select id="composerReasoning" aria-label="Reasoning effort"><option value="" disabled data-i18n="No observed choices">No observed choices</option></select></label>
                   </div>
                 </details>
-                <button class="btn" id="generateFinishGoal" type="button" hidden>Generate Goal</button>
+                <button class="btn" id="generateFinishGoal" type="button" hidden><span data-i18n="Generate Goal">Generate Goal</span></button>
                 <div class="send-control">
                   <div class="send-options" id="sendOptions" hidden>
-                    <div class="delivery-choices" role="radiogroup" aria-label="Message delivery">
-                      <button type="button" role="radio" aria-checked="true" data-delivery="auto">Inject now<svg class="ico" aria-hidden="true"><use href="#i-check" /></svg></button>
-                      <button type="button" role="radio" aria-checked="false" data-delivery="after-turn"><span id="afterTurnLabel">After this turn</span><svg class="ico" aria-hidden="true"><use href="#i-check" /></svg></button>
+                    <div class="delivery-choices" role="radiogroup" aria-label="Message delivery" data-i18n-aria-label="Message delivery">
+                      <button type="button" role="radio" aria-checked="true" data-delivery="auto"><span data-i18n="Inject now">Inject now</span><svg class="ico" aria-hidden="true"><use href="#i-check" /></svg></button>
+                      <button type="button" role="radio" aria-checked="false" data-delivery="after-turn"><span id="afterTurnLabel"><span data-i18n="After this turn">After this turn</span></span><svg class="ico" aria-hidden="true"><use href="#i-check" /></svg></button>
                     </div>
-                    <select id="sendMode" aria-label="Message delivery" hidden><option value="auto">Send</option><option value="after-turn">After this turn</option></select>
+                    <select id="sendMode" aria-label="Message delivery" data-i18n-aria-label="Message delivery" hidden><option value="auto" data-i18n="Send">Send</option><option value="after-turn" data-i18n="After this turn">After this turn</option></select>
                   </div>
-                  <button class="send-button" id="chatSend" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+                  <button class="send-button" id="chatSend" type="submit" aria-label="Send message" data-i18n-aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
                 </div>
               </div>
               <p id="composerStatus" role="status" aria-live="polite"></p>
             </form>
+            <div class="composer-hint"><span data-i18n="Enter to send · Shift+Enter for a new line">Enter to send · Shift+Enter for a new line</span><button id="connectionHelp" type="button" class="btn" data-i18n="Connection help">Connection help</button></div>
             <p class="foot" id="chatFoot" hidden></p>
           </section>
         </section>
@@ -829,19 +865,19 @@
         <section class="panel" data-panel="activity">
           <section class="card">
             <h2>
-              Activity
+              <span data-i18n="Activity">Activity</span>
               <span class="acts">
                 <span class="seg" id="logAgentFilter" hidden></span>
                 <span class="seg" id="logFilter">
-                  <button class="is-sel" data-filter="all" type="button">All</button>
-                  <button data-filter="bad" type="button">Problems</button>
+                  <button class="is-sel" data-filter="all" type="button"><span data-i18n="All">All</span></button>
+                  <button data-filter="bad" type="button"><span data-i18n="Problems">Problems</span></button>
                 </span>
                 <span class="problems" id="logProblems" hidden></span>
                 <button class="btn" id="copyLogJson" type="button">
                   <svg class="ico" viewBox="0 0 24 24"><use href="#i-copy" /></svg>JSON
                 </button>
                 <button class="btn" id="copyLogText" type="button">
-                  <svg class="ico" viewBox="0 0 24 24"><use href="#i-copy" /></svg>Text
+                  <svg class="ico" viewBox="0 0 24 24"><use href="#i-copy" /></svg><span data-i18n="Text">Text</span>
                 </button>
               </span>
             </h2>
