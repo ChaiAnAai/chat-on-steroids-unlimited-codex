@@ -21,6 +21,19 @@ describe('ephemeral observed ChatGPT model catalog', () => {
     expect(await startChatModelDiscovery()).toMatchObject({ state: 'unavailable', models: [], error: expect.stringMatching(/Chrome not found/) });
     expect(pendingChatModelRequest()).toBeNull();
   });
+  it('does not open a new browser for background discovery, then promotes an explicit refresh', async () => {
+    const wake = vi.fn(async (_nonce: string, allowOpen: boolean) => {
+      expect(allowOpen).toBe(false);
+    });
+    configureChatModelDiscovery({ wake, changed: () => {} });
+    await startChatModelDiscovery(false);
+    expect(wake).toHaveBeenCalledTimes(1);
+    resetChatModelsForTests();
+    const explicitWake = vi.fn(async (_nonce: string, allowOpen: boolean) => { expect(allowOpen).toBe(true); });
+    configureChatModelDiscovery({ wake: explicitWake, changed: () => {} });
+    await startChatModelDiscovery(true);
+    expect(explicitWake).toHaveBeenCalledTimes(1);
+  });
   it('reuses a pending request, accepts only its nonce, and detaches all public views', () => {
     expect(getChatModels().state).toBe('unknown');
     expect(requestChatModels().state).toBe('pending');
