@@ -408,7 +408,9 @@ export function defaultConfig(platform: NodeJS.Platform = process.platform, rele
     capabilities: firstLaunchCapabilities(platform, release),
     readOnly: false,
     tunnel: { kind: 'openai', tunnelId: '', desktopTunnelId: '', binaryPath: '' },
-    ui: { minimizeToTray: true, autoConnect: false, privacyScreenshots: false, language: 'en', theme: 'dark' },
+    // Fresh installs should be ready to use immediately. Existing users keep their
+    // explicit preference through the migration merge below.
+    ui: { minimizeToTray: true, autoConnect: true, privacyScreenshots: false, language: 'en', theme: 'dark' },
     sessions: { ...DEFAULT_SESSIONS },
     compaction: { ...DEFAULT_COMPACTION },
     multiAgent: { ...FIRST_LAUNCH_MULTI_AGENT },
