@@ -52,7 +52,9 @@ export function preferredBrowserCandidates(
     const p = path.win32;
     return [
       env.LOCALAPPDATA && p.join(env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      env.LOCALAPPDATA && p.join(env.LOCALAPPDATA, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
       env.ProgramFiles && p.join(env.ProgramFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      env.ProgramFiles && p.join(env.ProgramFiles, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
       env['ProgramFiles(x86)'] && p.join(env['ProgramFiles(x86)'], 'Google', 'Chrome', 'Application', 'chrome.exe')
     ].filter((candidate): candidate is string => Boolean(candidate));
   }
@@ -70,10 +72,14 @@ export function preferredBrowserCandidates(
       ['Google Chrome Canary.app', 'Google Chrome Canary'],
       ['Chromium.app', 'Chromium']
     ] as const;
-    return chromeChannels.flatMap(([bundle, executable]) => [
+    return [
+      '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+      ...(home ? [path.posix.join(home, 'Applications/Brave Browser.app/Contents/MacOS/Brave Browser')] : []),
+      ...chromeChannels.flatMap(([bundle, executable]) => [
       path.posix.join('/Applications', bundle, 'Contents', 'MacOS', executable),
       ...(home ? [path.posix.join(home, 'Applications', bundle, 'Contents', 'MacOS', executable)] : [])
-    ]);
+      ])
+    ];
   }
 
   if (platform === 'linux') {
@@ -87,6 +93,7 @@ export function preferredBrowserCandidates(
       'google-chrome-stable',
       'google-chrome-beta',
       'google-chrome-unstable',
+      'brave-browser',
       'chromium',
       'chromium-browser'
     ];
