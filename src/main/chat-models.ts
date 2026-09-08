@@ -15,12 +15,12 @@ const observation = z.object({
   }).strict()).min(1).max(20).nullable()
 }).strict();
 let catalog: ChatModelCatalog = { state: 'unknown', requestedAt: null, observedAt: null, models: [] };
-let request: { nonce: string; expiresAt: number } | null = null;
+let request: { nonce: string; expiresAt: number; allowOpen: boolean } | null = null;
 let deadline: ReturnType<typeof setTimeout> | null = null;
-let launch: { nonce: string; work: Promise<void>; finished: boolean } | null = null;
+let launch: { nonce: string; allowOpen: boolean; work: Promise<void>; finished: boolean } | null = null;
 let changed = (): void => {};
-let wake: ((nonce: string) => Promise<void>) | null = null;
-export function configureChatModelDiscovery(options: { changed: () => void; wake: (nonce: string) => Promise<void> }): void { changed = options.changed; wake = options.wake; }
+let wake: ((nonce: string, allowOpen: boolean) => Promise<void>) | null = null;
+export function configureChatModelDiscovery(options: { changed: () => void; wake: (nonce: string, allowOpen: boolean) => Promise<void> }): void { changed = options.changed; wake = options.wake; }
 function scheduleDeadline(at: number): void {
   if (deadline) clearTimeout(deadline);
   deadline = setTimeout(() => { deadline = null; expire(); changed(); wakeBrowserWork(); }, Math.max(0, at - Date.now()));
@@ -32,25 +32,27 @@ function expire(): void {
 export function getChatModels(): ChatModelCatalog {
   expire(); return structuredClone(catalog);
 }
-export function requestChatModels(): ChatModelCatalog {
+export function requestChatModels(allowOpen = true): ChatModelCatalog {
   expire();
   if (!request) {
-    const now = Date.now(); request = { nonce: randomUUID(), expiresAt: now + 120000 };
+    const now = Date.now(); request = { nonce: randomUUID(), expiresAt: now + 120000, allowOpen };
     logInfo(`model discovery requested id=${request.nonce}`);
     catalog = { state: 'pending', requestedAt: now, observedAt: null, models: [] };
     scheduleDeadline(request.expiresAt);
     wakeBrowserWork();
   }
+  else if (allowOpen) request.allowOpen = true;
   return getChatModels();
 }
 /** An explicit UI request starts only the local browser bridge, never MCP/tunnel exposure. */
-export async function startChatModelDiscovery(): Promise<ChatModelCatalog> {
-  requestChatModels();
+export async function startChatModelDiscovery(allowOpen = true): Promise<ChatModelCatalog> {
+  if (!allowOpen && catalog.state !== 'unknown') return getChatModels();
+  requestChatModels(allowOpen);
   const nonce = request!.nonce;
-  if (!launch || (launch.finished && launch.nonce !== nonce)) {
-    const attempt = { nonce, work: Promise.resolve(), finished: false };
+  if (!launch || launch.nonce !== nonce || (request!.allowOpen && !launch.allowOpen)) {
+    const attempt = { nonce, allowOpen: request!.allowOpen, work: Promise.resolve(), finished: false };
     const work = (async () => {
-      try { if (!wake) throw new Error('Model discovery is not ready'); await wake(nonce); logInfo(`model discovery browser wake completed id=${nonce}`); }
+      try { if (!wake) throw new Error('Model discovery is not ready'); await wake(nonce, attempt.allowOpen); logInfo(`model discovery browser wake completed id=${nonce}`); }
       catch (error) {
         if (request?.nonce !== nonce) return;
         request = null;
@@ -65,7 +67,7 @@ export async function startChatModelDiscovery(): Promise<ChatModelCatalog> {
   await launch.work;
   return getChatModels();
 }
-export function pendingChatModelRequest(): { nonce: string; expiresAt: number } | null {
+export function pendingChatModelRequest(): { nonce: string; expiresAt: number; allowOpen: boolean } | null {
   expire(); return request ? { ...request } : null;
 }
 export function observeChatModels(raw: unknown): boolean {

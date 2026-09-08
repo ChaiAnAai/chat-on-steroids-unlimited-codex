@@ -1037,9 +1037,9 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
       return drafted;
     }, publish);
   });
-  configureChatModelDiscovery({ changed: pushState, wake: async (nonce) => {
+  configureChatModelDiscovery({ changed: pushState, wake: async (nonce, allowOpen) => {
     if (!await startBridge()) throw new Error('The browser bridge could not start');
-    await wakeBrowserUrl(`https://chatgpt.com/?cos-model-catalog=${nonce}`, true, true);
+    await wakeBrowserUrl(`https://chatgpt.com/?cos-model-catalog=${nonce}`, allowOpen, allowOpen);
   } });
   onUpdateChange(pushState);
   onMacOSDesktopAccessChange(pushState);
