@@ -1821,8 +1821,13 @@ var CLF_DOM = (() => {
     const shown = (node) => node && !node.closest('[aria-hidden="true"]') && node.getClientRects().length > 0;
     const picker = () => document.querySelector('[data-testid="composer-intelligence-picker-content"]');
     const items = () => [...(picker()?.querySelectorAll('[role="menuitemradio"]') || [])].filter(shown);
-    const trigger = () => [...(composerActions()?.host?.querySelectorAll('button[aria-haspopup="menu"]') || [])]
-      .filter(shown).find((node) => node.getAttribute('data-testid') === 'composer-intelligence-picker' || /(?:Instant|Medium|High|Pro|Thinking effort|即时|即時|中等|超高|思考|推理)/i.test(node.textContent || ''));
+    // ChatGPT moved the composer controls outside the old actions host for GPT
+    // conversations. Search the whole visible document as a fallback so model
+    // discovery does not report picker_unavailable on the new layout.
+    const trigger = () => [...(composerActions()?.host?.querySelectorAll('button[aria-haspopup="menu"]') || []),
+      ...document.querySelectorAll('button[aria-haspopup="menu"]')]
+      .filter((node, index, all) => all.indexOf(node) === index && shown(node))
+      .find((node) => node.getAttribute('data-testid') === 'composer-intelligence-picker' || /(?:Instant|Medium|High|Pro|Thinking effort|即时|即時|中等|超高|思考|推理|深入)/i.test(node.textContent || '') || /(?:Thinking effort|思考强度|推理强度)/i.test(node.getAttribute('aria-label') || ''));
     const wait = (read, timeoutMs = 3000) => new Promise((resolve) => {
       let observer, timer;
       const finish = (value) => { observer?.disconnect(); clearTimeout(timer); resolve(value); };
