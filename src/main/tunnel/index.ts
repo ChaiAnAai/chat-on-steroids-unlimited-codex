@@ -161,6 +161,8 @@ const OFFLINE_RECHECK_MS = 5_000;
  * run has to outlive a full poll cycle before it counts.
  */
 const UNREACHABLE_CONFIRM_MS = 35_000;
+// Require two consecutive readiness failures before replacing a live client.
+const UNREADY_CONFIRM_MS = 15_000;
 
 /** A run of unreachable complaints not yet contradicted by a completed poll. */
 export interface UnreachableRun {
@@ -249,6 +251,7 @@ async function startOpenAiTunnel(opts: TunnelStartOptions): Promise<TunnelHandle
     unreachableReason: string;
     outage: UnreachableRun;
     lastHandshake: number | null;
+    unreadySince: number;
     pollErrors: number;
     healthBase: string | null;
     health: TunnelHealth | null;
@@ -422,10 +425,14 @@ async function startOpenAiTunnel(opts: TunnelStartOptions): Promise<TunnelHandle
           const ready = await probe(`${run.healthBase}/readyz`);
           if (stopped || current !== run) return;
           if (!ready.ok) {
+            const now = Date.now();
+            if (run.unreadySince === 0) { run.unreadySince = now; watch(run); return; }
+            if (now - run.unreadySince < UNREADY_CONFIRM_MS) { watch(run); return; }
             logWarn(`${tag} went unready: ${ready.detail}`);
             restart(run, ready.detail || 'The tunnel stopped responding.', true);
             return;
           }
+          run.unreadySince = 0;
 
           const read = await refreshHealth(run);
           if (read === undefined || stopped || current !== run) return;
@@ -484,6 +491,7 @@ async function startOpenAiTunnel(opts: TunnelStartOptions): Promise<TunnelHandle
       unreachableReason: '',
       outage: NO_OUTAGE,
       lastHandshake: null,
+      unreadySince: 0,
       pollErrors: 0,
       healthBase: null,
       health: null,
