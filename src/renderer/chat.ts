@@ -2843,7 +2843,7 @@ async function sendComposer(delivery?: 'finish', plan?: string[]): Promise<boole
     return;
   }
   const modelSettings = confirmedComposerModel();
-  if (!modelSettings) { toast('Reload model choices and select an available model and thinking effort before sending.'); return false; }
+  if (!modelSettings) { toast(translate('Reload model choices and select an available model and thinking effort before sending.')); return false; }
   const sessionId = selectedId;
   const generation = selectionGeneration;
   const chosenMode = delivery ?? $<HTMLSelectElement>('sendMode').value;
@@ -3048,7 +3048,7 @@ export function initChat(next: Deps): void {
         const draft = objective.value, mode = $<HTMLSelectElement>('sessionObjectiveMode').value as 'goal' | 'loop';
         if (!draft.trim()) return;
         const settings = confirmedComposerModel();
-        if (!settings) { toast('Reload model choices and select an available model and thinking effort before sending.'); return; }
+        if (!settings) { toast(translate('Reload model choices and select an available model and thinking effort before sending.')); return; }
         const selection = selectionGeneration, intent = goalIntentGeneration, requestId = crypto.randomUUID();
         const projectId = selectedProjectId;
         const { model, reasoningEffort } = settings;

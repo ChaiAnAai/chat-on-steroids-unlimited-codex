@@ -1,5 +1,6 @@
 // App-authored interface copy only. Never translate conversation content or protocol identifiers.
 export const EXTRA_ZH: Record<string, string> = {
+  'Reload model choices and select an available model and thinking effort before sending.': '发送前请刷新模型列表，并选择可用的模型和思考强度。',
   'Quick start — no tunnel ID or API key': '快速开始 — 无需隧道 ID 或 API 密钥',
   'Follow the highlighted step. Progress is detected automatically.': '跟随高亮步骤操作，应用会自动检测完成进度。',
   "Implement the requested change in this project. Read project instructions and identify existing build and test commands. Preserve unrelated changes. Make a focused change, run relevant checks, and report changed files, validation evidence and remaining limitations.": "请在当前项目中实现需求。先阅读项目说明，确认现有构建、运行和测试命令，保留无关改动。说明实施步骤后进行有界修改，运行相关检查，最后列出修改文件、验证证据和未验证部分。",
