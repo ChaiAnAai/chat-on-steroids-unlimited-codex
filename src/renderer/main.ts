@@ -219,14 +219,121 @@ function toolNames(names: readonly string[]): HTMLElement {
   return row;
 }
 
+/**
+ * Translate the small pieces of copy that are still supplied by the HTML skeleton or by
+ * feature modules.  The renderer deliberately uses exact-string translations so model names,
+ * paths, code, tool arguments and user-authored messages are never machine-translated by
+ * accident.  This pass therefore only touches text nodes/attributes outside those protected
+ * regions, and keeps the surrounding markup (icons, kbd hints and input controls) intact.
+ */
+const STATIC_TRANSLATION_EXCLUDED = [
+  'script', 'style', 'pre', 'code', 'textarea', '[contenteditable="true"]',
+  '.msg', '.said', '.user-message-text', '.pending-message-text', '.tool-args', '.tool-result',
+  '.raw-facts', '.session-tooltip'
+].join(', ');
+let translatingStaticDom = false;
+let staticTranslationScheduled = false;
+
+function translationProtected(node: Node): boolean {
+  const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
+  return Boolean(element?.closest(STATIC_TRANSLATION_EXCLUDED));
+}
+
+function exactTranslated(value: string): string {
+  const direct = translate(value);
+  if (direct !== value) return direct;
+  // HTML often wraps a sentence over several source lines. Compare a collapsed form while
+  // preserving the visible leading/trailing whitespace around the translated text node.
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  if (!collapsed || collapsed === value) return value;
+  const loose = translate(collapsed);
+  return loose === collapsed ? value : loose;
+}
+
+function translateStaticDom(root: ParentNode = document.body): void {
+  if (translatingStaticDom) return;
+  translatingStaticDom = true;
+  try {
+    // Electron exposes NodeFilter globally; the renderer unit-test harness only exposes the
+    // document object. The DOM constant is stable (SHOW_TEXT = 4), so use the document's
+    // realm when available and a numeric fallback for isolated DOM implementations.
+    const showText = (document.defaultView as (Window & { NodeFilter?: { SHOW_TEXT: number } }) | null)?.NodeFilter?.SHOW_TEXT ?? 4;
+    const walker = document.createTreeWalker(root, showText);
+    const textNodes: Text[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.nodeType === Node.TEXT_NODE && !translationProtected(node)) textNodes.push(node as Text);
+    }
+    for (const node of textNodes) {
+      const raw = node.nodeValue ?? '';
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      const translated = exactTranslated(trimmed);
+      if (translated === trimmed) continue;
+      const leading = raw.slice(0, raw.indexOf(trimmed));
+      const trailing = raw.slice(raw.indexOf(trimmed) + trimmed.length);
+      node.nodeValue = `${leading}${translated}${trailing}`;
+    }
+
+    // Input values are user data, but their hints and accessibility labels are app copy.
+    for (const element of root.querySelectorAll<HTMLElement>('[title], [aria-label], [placeholder]')) {
+      if (translationProtected(element) && !['INPUT', 'TEXTAREA'].includes(element.tagName)) continue;
+      for (const name of ['title', 'aria-label', 'placeholder']) {
+        const value = element.getAttribute(name);
+        if (!value) continue;
+        const translated = exactTranslated(value);
+        if (translated !== value) element.setAttribute(name, translated);
+      }
+    }
+  } finally {
+    translatingStaticDom = false;
+  }
+}
+
+function scheduleStaticTranslation(): void {
+  if (staticTranslationScheduled || translatingStaticDom) return;
+  staticTranslationScheduled = true;
+  queueMicrotask(() => {
+    staticTranslationScheduled = false;
+    translateStaticDom();
+  });
+}
+
+function initStaticTranslationObserver(): void {
+  if (typeof MutationObserver === 'undefined') return;
+  const observer = new MutationObserver(() => scheduleStaticTranslation());
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['title', 'aria-label', 'placeholder']
+  });
+}
+
+function setLabelPreservingMarkup(node: HTMLElement, value: string): void {
+  // IDs used by stateful buttons commonly contain an icon or a status span. Updating only
+  // their direct text/label child avoids deleting that markup every time the locale changes.
+  const span = node.querySelector<HTMLElement>(':scope > span:not(.live):not(.dot)');
+  if (span && node.children.length > 0) {
+    span.textContent = value;
+    return;
+  }
+  const directText = [...node.childNodes].find(child => child.nodeType === Node.TEXT_NODE);
+  if (directText) directText.nodeValue = value;
+  else node.append(document.createTextNode(value));
+}
+
 function applyTranslatedLabels(): void {
   const labels: Record<string, string> = {
     workspaceSettings: 'Settings', chatTitle: 'New chat', installUpdate: 'Install update',
-    connectLabel: 'Connect', updateExtension: 'Update extension', runChecks: 'Run checks',
-    wizExpand: 'Show all steps', addFolder: 'Choose folder', wizAddFolder: 'Choose folder',
+    connectLabel: 'Connect', updateExtension: 'Update extension', runChecksLabel: 'Run checks',
+    wizExpand: 'Show all steps', addFolder: 'Add', wizAddFolder: 'Choose folder',
     wizManageFolders: 'Manage folders'
   };
-  for (const [id, key] of Object.entries(labels)) { const node = document.getElementById(id); if (node) node.textContent = translate(key); }
+  for (const [id, key] of Object.entries(labels)) {
+    const node = document.getElementById(id);
+    if (node) setLabelPreservingMarkup(node, translate(key));
+  }
+  translateStaticDom();
 }
 function buildGroups(): void {
   const permissionGroups = GROUPS.map((group) => {
@@ -1103,6 +1210,10 @@ function apply(next: AppState): void {
 
   chatApply(next, previousState?.config);
 
+  // Feature modules append controls after the initial HTML has loaded. Re-run the protected
+  // exact-string pass after every state paint so those controls follow the selected locale too.
+  scheduleStaticTranslation();
+
   applying = false;
 }
 
@@ -1712,6 +1823,7 @@ void (async () => {
   const loaded = await refresh();
   setUiLanguage(loaded?.config.ui.language ?? 'en');
   applyTranslatedLabels();
+  initStaticTranslationObserver();
   // A first run has nothing set up, so open on the wizard rather than an empty Home.
   showTab(state && missingStep(state)?.step === 'folder' ? 'setup' : 'chat');
   const entries = await run(api.getLog());
