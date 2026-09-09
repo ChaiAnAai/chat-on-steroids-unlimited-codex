@@ -1709,7 +1709,7 @@ initChat({ save: () => save(), state: () => state });
 
 void (async () => {
   await refresh();
-  setUiLanguage(state?.config.ui.language ?? 'en');
+  setUiLanguage('en');
   applyTranslatedLabels();
   // A first run has nothing set up, so open on the wizard rather than an empty Home.
   showTab(state && missingStep(state)?.step === 'folder' ? 'setup' : 'chat');
@@ -1718,6 +1718,7 @@ void (async () => {
   const swarm = await run(api.getSwarm());
   if (swarm) paintAgentFilter(swarm);
 })();
+
 
 
 
