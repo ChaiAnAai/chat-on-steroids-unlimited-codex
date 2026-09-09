@@ -41,6 +41,7 @@ import {
   type AppState,
   type Config
 } from '../shared/types.js';
+import { LANGUAGE_CODES } from '../shared/languages.js';
 import { MAX_GOAL_SYSTEM_PROMPT_CHARS } from '../shared/goal.js';
 import { applySettings, connect, disconnect, getStatus, onStatusChange } from './connection.js';
 import { effectiveCapabilities, getConfig, updateConfig, MAX_MCP_INSTRUCTIONS_CHARS } from './config.js';
@@ -131,6 +132,7 @@ const settingsPatch = z.object({
     binaryPath: z.string().max(4096)
   }),
   ui: z.object({
+    language: z.enum(LANGUAGE_CODES).optional(),
     chatBrowser: z.enum(CHAT_BROWSERS).optional(),
     developerMode: z.boolean().optional(),
     finishTool: z.boolean().optional(),
@@ -248,6 +250,7 @@ function mergeSettings(current: Config, base: SettingsSnapshot, wanted: Settings
       binaryPath: pick(current.tunnel.binaryPath, base.tunnel.binaryPath, wanted.tunnel.binaryPath)
     },
     ui: {
+      language: pick(current.ui.language, base.ui.language, wanted.ui.language),
       chatBrowser: pick(current.ui.chatBrowser, base.ui.chatBrowser, wanted.ui.chatBrowser),
       developerMode: pick(current.ui.developerMode, base.ui.developerMode, wanted.ui.developerMode),
       finishTool: pick(current.ui.finishTool, base.ui.finishTool, wanted.ui.finishTool),
