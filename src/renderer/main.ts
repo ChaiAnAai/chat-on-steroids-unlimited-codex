@@ -1824,8 +1824,16 @@ initLanguagePicker(async language => { setUiLanguage(language); await save({ lan
 initChat({ save: () => save(), state: () => state });
 
 void (async () => {
-  const loaded = await refresh();
-  setUiLanguage(loaded?.config.ui.language ?? 'en');
+  // Load the persisted locale before the first state paint.  Previously `refresh()` called
+  // `apply()` while the translator was still on its English default, which meant dynamic
+  // labels (statuses, setup guidance and model messages) stayed English until another state
+  // event happened.  Applying the initial state only after selecting the locale makes the first
+  // frame use the same translation path as every subsequent update.
+  const loaded = await run(api.getState());
+  if (loaded) {
+    setUiLanguage(loaded.config.ui.language ?? 'en');
+    apply(loaded);
+  }
   applyTranslatedLabels();
   initStaticTranslationObserver();
   // A first run has nothing set up, so open on the wizard rather than an empty Home.
