@@ -1707,7 +1707,7 @@ initLanguagePicker(async language => { setUiLanguage(language); await save({ lan
 initChat({ save: () => save(), state: () => state });
 
 void (async () => {
-  await refresh();
+  await refresh();`n  setUiLanguage(state?.config.ui.language ?? 'en');`n  applyTranslatedLabels();
   // A first run has nothing set up, so open on the wizard rather than an empty Home.
   showTab(state && missingStep(state)?.step === 'folder' ? 'setup' : 'chat');
   const entries = await run(api.getLog());
@@ -1715,6 +1715,7 @@ void (async () => {
   const swarm = await run(api.getSwarm());
   if (swarm) paintAgentFilter(swarm);
 })();
+
 
 
 
