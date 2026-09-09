@@ -28,6 +28,7 @@ import {
   type Root,
   type SessionSettings
 } from '../shared/types.js';
+import { LANGUAGE_CODES } from '../shared/languages.js';
 import {
   DEFAULT_GOAL_MODEL,
   DEFAULT_GOAL_LOOP_SYSTEM_PROMPT,
@@ -287,6 +288,7 @@ const configSchema = z.object({
     binaryPath: z.string().max(4096)
   }),
   ui: z.object({
+    language: z.enum(LANGUAGE_CODES).optional().default('zh-CN'),
     chatBrowser: z.enum(CHAT_BROWSERS).optional().default('chrome'),
     developerMode: z.boolean().optional(),
     finishTool: z.boolean().optional(),
@@ -476,7 +478,7 @@ export function defaultConfig(platform: NodeJS.Platform = process.platform, rele
     capabilities: firstLaunchCapabilities(platform, release),
     readOnly: false,
     tunnel: { kind: 'openai', tunnelId: '', desktopTunnelId: '', binaryPath: '' },
-    ui: { minimizeToTray: true, autoConnect: false, startAtLogin: false, privacyScreenshots: false, theme: 'dark', autoRefreshPlugins: false },
+    ui: { language: 'zh-CN', minimizeToTray: true, autoConnect: false, startAtLogin: false, privacyScreenshots: false, theme: 'dark', autoRefreshPlugins: false },
     sessions: { ...DEFAULT_SESSIONS },
     compaction: { ...DEFAULT_COMPACTION },
     multiAgent: { ...FIRST_LAUNCH_MULTI_AGENT },

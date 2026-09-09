@@ -1,5 +1,5 @@
 import { LANGUAGE_CODES, LANGUAGE_NAMES, type LanguageCode } from '../shared/languages.js';
-import { translate } from './i18n.js';
+import { translate, uiLanguage } from './i18n.js';
 
 let selected: LanguageCode = 'en';
 let dialog: HTMLDialogElement | undefined;
@@ -27,6 +27,9 @@ export function initLanguagePicker(save: (language: LanguageCode) => Promise<voi
   const close = document.createElement('button'); close.className = 'language-close'; close.type = 'button'; close.addEventListener('click', () => dialog!.close());
   dialog.append(list, close); document.body.append(dialog);
   document.getElementById('languageBtn')!.addEventListener('click', () => {
+    // The picker is created before the asynchronous initial state arrives. Read the current
+    // renderer preference when opening so a saved non-English locale is never shown as English.
+    selected = uiLanguage();
     paintLanguagePicker(selected); dialog!.showModal(); dialog!.querySelector<HTMLButtonElement>(`[data-language="${selected}"]`)!.focus();
   });
   dialog.addEventListener('close', () => document.querySelector<HTMLElement>('#appearanceMenu > summary')?.focus());
