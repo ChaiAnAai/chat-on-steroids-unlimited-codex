@@ -770,7 +770,8 @@ let announced = false;
  * Null is the one silence that is not an answer: GitHub has not replied yet in this run, so
  * "up to date" would be a claim nobody has checked. That is what `checkedAt` is for.
  *
- * `notice` is the narrower question of whether the header bar carries the sentence at all. That
+ * 
+otice` is the narrower question of whether the header bar carries the sentence at all. That
  * bar is for what the user can act on - a version to fetch by hand, an extension to reload -
  * while the Activity line reports every state, including the good one.
  */
@@ -1707,7 +1708,9 @@ initLanguagePicker(async language => { setUiLanguage(language); await save({ lan
 initChat({ save: () => save(), state: () => state });
 
 void (async () => {
-  await refresh();`n  setUiLanguage(state?.config.ui.language ?? 'en');`n  applyTranslatedLabels();
+  await refresh();
+  setUiLanguage(state?.config.ui.language ?? 'en');
+  applyTranslatedLabels();
   // A first run has nothing set up, so open on the wizard rather than an empty Home.
   showTab(state && missingStep(state)?.step === 'folder' ? 'setup' : 'chat');
   const entries = await run(api.getLog());
@@ -1715,6 +1718,7 @@ void (async () => {
   const swarm = await run(api.getSwarm());
   if (swarm) paintAgentFilter(swarm);
 })();
+
 
 
 
