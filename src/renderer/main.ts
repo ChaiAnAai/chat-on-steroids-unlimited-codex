@@ -18,7 +18,7 @@ import { initBrowserPreferences } from './browser-preferences.js';
 
 import type { AppApi, SettingsPatch } from '../preload/index.js';
 import { requiresApprovedFilesystemRoot } from '../shared/capabilities.js';
-import type { AppState, Capability, ChatBrowser, LogEntry, SurfaceStatus } from '../shared/types.js';
+import type { AppState, Capability, ChatBrowser, LogEntry, SurfaceStatus, UiPrefs } from '../shared/types.js';
 import {
   browserExtensionRequired,
   isNewer,
@@ -31,6 +31,8 @@ import {
 } from '../shared/types.js';
 import type { SwarmState } from '../shared/session.js';
 import { $, ago, el, icon, run, shortAgo, toast } from './dom.js';
+import { initLanguagePicker } from './language-picker.js';
+import { setUiLanguage } from './i18n.js';
 import { chatApply, chatSettingsPatch, chatVisible, initChat, openChatView } from './chat.js';
 
 declare global {
@@ -416,7 +418,7 @@ function toolsOn(next: AppState): number {
 let settingsSaveQueue: Promise<void> = Promise.resolve();
 let requestedSettings: SettingsPatch | null = null;
 
-function save(over: { readOnly?: boolean; theme?: 'light' | 'dark' } = {}): Promise<void> {
+function save(over: { readOnly?: boolean; theme?: 'light' | 'dark'; language?: UiPrefs['language'] } = {}): Promise<void> {
   if (applying || !state) return Promise.resolve();
 
   const previous: AppState['config'] = requestedSettings
@@ -1692,6 +1694,7 @@ initSidebarResize();
 initUsage();
 initPlugins(apply);
 initBrowserPreferences();
+initLanguagePicker(async language => { setUiLanguage(language); await save({ language }); window.location.reload(); });
 initChat({ save: () => save(), state: () => state });
 
 void (async () => {
@@ -1703,3 +1706,6 @@ void (async () => {
   const swarm = await run(api.getSwarm());
   if (swarm) paintAgentFilter(swarm);
 })();
+
+
+

@@ -124,6 +124,7 @@ export const CHAT_BROWSERS = ['chrome', 'edge', 'brave'] as const;
 export type ChatBrowser = (typeof CHAT_BROWSERS)[number];
 
 export interface UiPrefs {
+  language?: 'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'ko' | 'es' | 'fr' | 'de';
   /** Maintenance may reuse existing tabs but cannot open helpers or missing chats. */
   browserOnly?: boolean;
   backgroundChats?: boolean;
@@ -656,3 +657,5 @@ export const CAPABILITY_TOOLS: Record<Capability, readonly string[]> = {
   clipboardRead: ['computer'],
   clipboardWrite: ['computer']
 };
+
+
