@@ -563,6 +563,10 @@ function save(over: { readOnly?: boolean; theme?: 'light' | 'dark'; language?: U
       binaryPath: $<HTMLInputElement>('binaryPath').value.trim()
     },
     ui: {
+      // Keep the language in the same persisted UI snapshot as theme/browser preferences.
+      // Previously the picker updated the live renderer, but this field was omitted from the
+      // IPC patch, so a restart silently returned to English.
+      language: over.language ?? previous.ui.language,
       chatBrowser: $<HTMLSelectElement>('chatBrowser').value as ChatBrowser,
       finishTool: $<HTMLInputElement>('finishTool').checked,
       planBackend: $<HTMLSelectElement>('planBackend').value as 'chatgpt' | 'api',
