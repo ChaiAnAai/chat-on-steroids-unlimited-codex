@@ -219,6 +219,15 @@ function toolNames(names: readonly string[]): HTMLElement {
   return row;
 }
 
+function applyTranslatedLabels(): void {
+  const labels: Record<string, string> = {
+    workspaceSettings: 'Settings', chatTitle: 'New chat', installUpdate: 'Install update',
+    connectLabel: 'Connect', updateExtension: 'Update extension', runChecks: 'Run checks',
+    wizExpand: 'Show all steps', addFolder: 'Choose folder', wizAddFolder: 'Choose folder',
+    wizManageFolders: 'Manage folders'
+  };
+  for (const [id, key] of Object.entries(labels)) { const node = document.getElementById(id); if (node) node.textContent = translate(key); }
+}
 function buildGroups(): void {
   const permissionGroups = GROUPS.map((group) => {
     const box = document.createElement('input');
@@ -1706,6 +1715,7 @@ void (async () => {
   const swarm = await run(api.getSwarm());
   if (swarm) paintAgentFilter(swarm);
 })();
+
 
 
 
