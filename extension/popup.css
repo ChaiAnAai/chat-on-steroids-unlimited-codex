@@ -601,6 +601,10 @@ input:focus-visible + .track {
   gap: 8px;
 }
 
+.reload-action {
+  margin-top: 12px;
+}
+
 .actions button {
   flex: 1 1 0;
   min-height: 36px;
@@ -621,17 +625,6 @@ input:focus-visible + .track {
 .actions button:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-.reload-action {
-  margin: 0 0 6px;
-}
-
-.reload-status {
-  margin: 0 4px 16px;
-  color: var(--faint);
-  font-size: 11px;
-  line-height: 1.4;
 }
 
 button:focus-visible {

@@ -12,54 +12,6 @@
  */
 
 const $ = (id) => document.getElementById(id);
-const POPUP_ZH = {
-  'Looking for the app': '正在查找应用', 'Reload companion': '重新加载扩展',
-  'Restarts this extension. Then reopen this popup to check its connection.': '重启此扩展，然后重新打开弹窗检查连接。',
-  'Reload requested. Reopen this popup to verify the connection.': '已请求重载，请重新打开弹窗检查连接。',
-  'Session capture': '会话记录', 'ChatGPT tab': 'ChatGPT 标签页', 'Recording this chat': '正在记录此聊天',
-  'Chat id': '聊天 ID', 'Request id': '请求 ID', 'Reaching the app': '连接到应用',
-  'Picked up': '已读取', 'Sent to app': '已发送至应用', 'App processed': '应用已处理',
-  'Augment ChatGPT': '增强 ChatGPT', 'Overwrite ChatGPT': '显示本地工具活动', 'Timestamps': '时间戳',
-  'Advanced': '高级', 'Copy': '复制', 'Try again': '重试', 'Disconnect': '断开连接', 'Connect': '连接',
-  'Version mismatch': '版本不兼容', 'Disconnected': '已断开', 'App not running': '应用未运行',
-  'The app and this extension speak different bridge protocols.': '应用与扩展的连接协议不一致，请加载本地版配套扩展。'
-};
-let popupLanguage = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en';
-const popupText = text => popupLanguage === 'zh-CN' ? POPUP_ZH[text] || text : text;
-// Capture only app-owned static text before any account IDs or runtime data are rendered.
-const staticCopy = [];
-const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-  const source = node.textContent.trim();
-  if (POPUP_ZH[source]) staticCopy.push([node, source]);
-}
-function paintLanguage() {
-  document.documentElement.lang = popupLanguage;
-  for (const [node, source] of staticCopy) if (node.isConnected) node.textContent = popupText(source);
-  $('languageBtn').textContent = popupLanguage === 'zh-CN' ? 'English' : '中文';
-  $('languageBtn').setAttribute('aria-label', popupLanguage === 'zh-CN' ? '切换到英文' : 'Switch to Chinese');
-}
-$('languageBtn').addEventListener('click', () => {
-  popupLanguage = popupLanguage === 'zh-CN' ? 'en' : 'zh-CN';
-  paintLanguage(); paintHeader(latest.status);
-  void chrome.storage.local.set({ popupLanguage }).catch(() => {});
-});
-paintLanguage();
-// This explicit action runs in the freshly opened popup, never through the worker
-// it is meant to replace. It therefore remains usable when that worker is stale
-// or its status/connection requests never return.
-$('reloadBtn').addEventListener('click', () => {
-  const button = $('reloadBtn');
-  if (button.disabled) return;
-  button.disabled = true;
-  $('reloadStatus').textContent = popupText('Reload requested. Reopen this popup to verify the connection.');
-  try {
-    chrome.runtime.reload();
-  } catch (error) {
-    button.disabled = false;
-    $('reloadStatus').textContent = `Reload failed: ${error instanceof Error ? error.message : String(error)}`;
-  }
-});
 const RENDER_STREAM_KEY = 'renderStreamEnabled';
 const SHOW_TIMES_KEY = 'showStreamTimes';
 const POLL_MS = 1500;
@@ -145,7 +97,7 @@ function pipeline(info, ready) {
       read: readStage,
       sent: ['failed', pending ? `${pending} held` : ''],
       proc: ['off'],
-      why: ['bad', 'The app is not reachable. Nothing is leaving this browser.']
+      why: ['bad', 'Delivery is blocked until the app is connected and protocol compatibility is confirmed.']
     };
   }
   if (sent && sent.ok === false) {
@@ -183,15 +135,17 @@ function pipeline(info, ready) {
     };
   }
 
-  const sentStage = ['done', sent && sent.total ? String(sent.total) : ''];
   if (!page.session) {
     return {
       read: readStage,
-      sent: sentStage,
+      sent: ['running'],
       proc: ['running'],
-      why: ['', 'Delivered. The app has not opened a session for this chat yet.']
+      // The worker's delivery counters cover every tab. Only the page's session
+      // receipt proves that this particular chat reached the app.
+      why: ['', 'App reachable. Waiting for this chat’s session receipt.']
     };
   }
+  const sentStage = ['done', sent && sent.total ? String(sent.total) : ''];
 
   const calls = Array.isArray(page.trace) ? page.trace : [];
   const placed = calls.filter((call) => call.app === 'request_id').length;
@@ -256,21 +210,22 @@ function paintHeader(status) {
   // connection that has not finished yet, which is what it looked like back when the next
   // poll would silently undo it.
   const off = status && status.disconnected === true && !paired;
-  const ready = connected && paired && !incompatible;
+  const ready = connected && paired && status.compatible === true;
 
   $('pill').className = `pill ${ready ? '' : incompatible ? 'bad' : 'off'}`;
   $('state').textContent = incompatible
-    ? popupText('Version mismatch')
+    ? 'Version mismatch'
     : off
-      ? popupText('Disconnected')
+      ? 'Disconnected'
       : !connected
-        ? popupText('App not running')
+        ? 'App not reachable'
         : ready
-          ? (popupLanguage === 'zh-CN' ? `已连接 · 端口 ${status.port}` : `Connected · Port ${status.port}`)
-          : (popupLanguage === 'zh-CN' ? `端口 ${status.port} · 正在连接` : `Port ${status.port} · connecting`);
+          // Health + pairing prove reachability, not the recorder/command flow.
+          ? `App reachable · Port ${status.port}`
+          : `Port ${status.port} · connecting`;
 
   $('retryBtn').hidden = ready || incompatible;
-  $('retryBtn').textContent = popupText(off ? 'Connect' : 'Try again');
+  $('retryBtn').textContent = off ? 'Connect' : 'Try again';
   $('unpairBtn').hidden = !paired || incompatible;
   return ready;
 }
@@ -281,7 +236,7 @@ function paintAlert(status, info) {
   const pairError = status && status.pairError;
   const error = page && page.lastError;
   const text = incompatible
-    ? 'The app and this extension speak different bridge protocols.'
+    ? `App v${status.appVersion || '?'} (protocol ${status.appProtocol ?? '?'}); companion v${status.extensionVersion || '?'} (protocol ${status.extensionProtocol ?? '?'}). Open your browser's Extensions page, enable Developer mode, then Update / Reload this companion. If the mismatch remains, use Open extension folder in Chat On Steroids and load that folder. Reload ChatGPT tabs when their active work is finished.`
     : pairError && pairError.message
       ? pairError.message
       : pairError && pairError.error === 'secure_storage_unavailable'
@@ -404,9 +359,7 @@ function syncOverwrite() {
 }
 
 async function loadPreferences() {
-  const stored = await chrome.storage.local.get([RENDER_STREAM_KEY, SHOW_TIMES_KEY, 'popupLanguage']);
-  if (stored.popupLanguage === 'en' || stored.popupLanguage === 'zh-CN') popupLanguage = stored.popupLanguage;
-  paintLanguage(); paintHeader(latest.status);
+  const stored = await chrome.storage.local.get([RENDER_STREAM_KEY, SHOW_TIMES_KEY]);
   overwriteEnabled = stored[RENDER_STREAM_KEY] !== false;
   showTimes = stored[SHOW_TIMES_KEY] === true;
   syncOverwrite();
@@ -443,6 +396,11 @@ $('copyBtn').addEventListener('click', (event) => {
 });
 
 $('more').addEventListener('toggle', () => paintDetails(latest.status, latest.tab));
+
+$('reloadBtn').addEventListener('click', () => {
+  // The old worker may be stuck: this explicit action belongs to the popup itself.
+  chrome.runtime.reload();
+});
 
 $('retryBtn').addEventListener('click', async () => {
   $('retryBtn').disabled = true;

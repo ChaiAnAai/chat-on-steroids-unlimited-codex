@@ -25,15 +25,12 @@
       <header>
         <img class="glyph" src="icons/icon48.png" alt="" width="34" height="34" />
         <h1>Chat On Steroids</h1>
-        <button id="languageBtn" type="button" aria-label="Switch language">中文</button>
       </header>
 
-      <p class="pill" id="pill"><span class="dot"></span><span id="state">Looking for the app</span></p>
-      <div class="actions reload-action">
-        <button id="reloadBtn" type="button" aria-describedby="reloadStatus">Reload companion</button>
-      </div>
-      <p id="reloadStatus" class="reload-status" role="status">Restarts this extension. Then reopen this popup to check its connection.</p>
+      <p class="pill off" id="pill"><span class="dot"></span><span id="state">Looking for the app</span></p>
 
+
+      <p class="alert" id="alert" hidden></p>
       <p class="caption">Session capture</p>
       <section class="card">
         <div class="row" id="r-tab">
@@ -78,7 +75,6 @@
       </details>
     </section>
 
-    <p class="alert" id="alert" hidden></p>
 
     <p class="caption">Augment ChatGPT</p>
     <section class="card">
@@ -109,6 +105,10 @@
         <button id="unpairBtn" type="button" hidden>Disconnect</button>
       </div>
     </details>
+
+    <div class="actions reload-action">
+      <button id="reloadBtn" type="button">Reload companion</button>
+    </div>
 
     </div>
     <script src="popup.js"></script>
