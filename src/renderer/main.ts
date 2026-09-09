@@ -1694,9 +1694,10 @@ api.onStateChanged(apply);
 api.onLogEntry(addLogLine);
 api.onSwarmChanged(paintAgentFilter);
 
-async function refresh(): Promise<void> {
+async function refresh(): Promise<AppState | null> {
   const next = await run(api.getState());
   if (next) apply(next);
+  return next ?? null;
 }
 
 buildGroups();
@@ -1708,8 +1709,8 @@ initLanguagePicker(async language => { setUiLanguage(language); await save({ lan
 initChat({ save: () => save(), state: () => state });
 
 void (async () => {
-  await refresh();
-  setUiLanguage('en');
+  const loaded = await refresh();
+  setUiLanguage(loaded?.config.ui.language ?? 'en');
   applyTranslatedLabels();
   // A first run has nothing set up, so open on the wizard rather than an empty Home.
   showTab(state && missingStep(state)?.step === 'folder' ? 'setup' : 'chat');
