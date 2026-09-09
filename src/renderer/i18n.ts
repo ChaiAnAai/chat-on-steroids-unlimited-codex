@@ -190,8 +190,10 @@ const STATIC_ZH_MORE: Record<string, string> = {
   'https, or http on localhost.': '支持 https；本机地址也可使用 http。',
   'are called under it.': '都会在该地址下调用。',
   'Your endpoint’s own model id, typed exactly as it serves it.': '填写端点实际提供的模型 ID，必须与端点返回的写法完全一致。',
+  "Your endpoint's own model id, typed exactly as it serves it.": '填写端点实际提供的模型 ID，必须与端点返回的写法完全一致。',
   'Endpoint API key (optional)': '端点 API 密钥（可选）',
   'This chat’s goal': '此聊天的目标',
+  "This chat's goal": '此聊天的目标',
   'Read model choices from your account.': '从你的账号读取模型选项。',
   'Confirmed in ChatGPT before a worker starts.': '子代理启动前由 ChatGPT 确认。',
   'Selected independently from the model.': '独立于模型选择。',
@@ -205,6 +207,7 @@ const STATIC_ZH_MORE: Record<string, string> = {
   'Background chats': '后台聊天',
   'ChatGPT browser': 'ChatGPT 浏览器',
   'Refresh to read the browser’s current preferences.': '刷新以读取浏览器当前偏好。',
+  "Refresh to read the browser's current preferences.": '刷新以读取浏览器当前偏好。',
   'Endpoint base URL': '端点基础 URL',
   'OpenRouter API key': 'OpenRouter API 密钥',
   'Select model': '选择模型',
@@ -277,6 +280,94 @@ const STATIC_ZH_MORE: Record<string, string> = {
   'Problems': '问题',
   'JSON': 'JSON',
   'Text': '文本'
+  , 'Activity copied': '活动记录已复制'
+  , 'Activity JSON copied': '活动 JSON 已复制'
+  , 'Handoff copied': '交接摘要已复制'
+  , 'Swarm cleared': '代理组已清空'
+  , 'Browser disconnected': '浏览器已断开'
+  , 'Extension folder opened': '扩展文件夹已打开'
+  , 'API key stored': 'API 密钥已保存'
+  , 'API key removed': 'API 密钥已移除'
+  , 'Model discovery could not start.': '模型发现无法启动。'
+  , 'Model discovery could not confirm your selection. Choose an available model and thinking effort, then send again.': '模型发现未能确认你的选择。请选择可用模型和思考力度，然后重试发送。'
+  , 'Opening message generation failed': '开场消息生成失败'
+  , 'Opening message could not be queued': '开场消息无法排队'
+  , 'Task could not be saved': '任务无法保存'
+  , 'Task could not continue': '任务无法继续'
+  , 'Opening message cancelled': '开场消息已取消'
+  , 'Automation paused · task text preserved': '自动化已暂停 · 已保留任务内容'
+  , 'Goal reached': '已达到目标'
+  , 'Saving task…': '正在保存任务…'
+  , 'Task saved · waiting for the next completed answer': '任务已保存 · 等待下一条完整答案'
+  , 'Preparing the opening message…': '正在准备开场消息…'
+  , 'Generating the opening message…': '正在生成开场消息…'
+  , 'Message ready · awaiting ChatGPT delivery': '消息已准备好 · 等待 ChatGPT 发送'
+  , 'Preparing a continuation…': '正在准备后续消息…'
+  , 'Generating a continuation…': '正在生成后续消息…'
+  , 'Opening message queued': '开场消息已排队'
+  , 'Sending opening message to ChatGPT…': '正在向 ChatGPT 发送开场消息…'
+  , 'Opening message sent': '开场消息已发送'
+  , 'Opening message delivered to the active turn': '开场消息已送达当前轮次'
+  , 'Plan cancelled': '计划已取消'
+  , 'Preparing plan…': '正在准备计划…'
+  , 'Plan ready': '计划已准备好'
+  , 'Plan failed': '计划失败'
+  , 'Writing plan…': '正在编写计划…'
+  , 'Provider busy': '服务商繁忙'
+  , 'opening': '启动中'
+  , 'active': '进行中'
+  , 'no tab': '没有标签页'
+  , 'sleeping': '休眠中'
+  , 'waking': '唤醒中'
+  , 'finished': '已完成'
+  , 'failed': '失败'
+  , 'blocked': '已阻止'
+  , 'not a chat': '不是聊天'
+  , 'resumed': '已恢复'
+  , 'prime': '主代理'
+  , 'Pause automation': '暂停自动化'
+  , 'Edit task': '编辑任务'
+  , 'Start full plan': '开始完整计划'
+  , 'Generate plan': '生成计划'
+  , 'Click to generate plan': '点击生成计划'
+  , 'Cancel delivery': '取消发送'
+  , 'Stop requested': '已请求停止'
+  , 'Stop turn': '停止当前轮次'
+  , 'Browser extension not connected. Open ChatGPT and check the companion in Setup to load models and send messages.': '浏览器扩展未连接。请打开 ChatGPT，并在设置向导中检查配套扩展，以加载模型并发送消息。'
+  , 'Connection help': '连接帮助'
+  , 'Extension folder': '扩展文件夹'
+  , 'Plugin operation failed': '插件操作失败'
+  , 'Plugin setup': '插件设置'
+  , 'Your Plugins connector': '你的 Plugins 连接器'
+  , 'Connected to ChatGPT': '已连接到 ChatGPT'
+  , 'Connector online · waiting for ChatGPT': '连接器在线 · 等待 ChatGPT'
+  , 'Plugins connector offline': 'Plugins 连接器离线'
+  , 'Ready to add in ChatGPT': '可以添加到 ChatGPT'
+  , 'Connected · no tools': '已连接 · 没有工具'
+  , 'Connecting…': '连接中…'
+  , 'Disabled': '已禁用'
+  , 'Check connection': '检查连接'
+  , 'Needs attention': '需要处理'
+  , 'Sign in needed': '需要登录'
+  , 'Signing in…': '正在登录…'
+  , 'Ready': '就绪'
+  , 'Tool preview': '工具预览'
+  , 'Setup requirements': '设置要求'
+  , 'Open project & setup guide': '打开项目与设置指南'
+  , 'Add connection': '添加连接'
+  , 'Install and connect': '安装并连接'
+  , 'Connect your MCP server': '连接你的 MCP 服务器'
+  , 'Display name': '显示名称'
+  , 'My MCP server': '我的 MCP 服务器'
+  , 'Server type': '服务器类型'
+  , 'Package, executable, URL or bundle path': '包、可执行文件、URL 或捆绑包路径'
+  , 'Version (npm / Python)': '版本（npm / Python）'
+  , 'Arguments (JSON array)': '参数（JSON 数组）'
+  , 'Credential name (optional)': '凭据名称（可选）'
+  , 'Credential value': '凭据值'
+  , 'Enter the server location first.': '请先输入服务器位置。'
+  , 'Arguments must be a JSON array of strings.': '参数必须是字符串组成的 JSON 数组。'
+  , 'Remote servers must support MCP Streamable HTTP. GitHub links require a known recipe or supported manifest. Local servers run outside the CoS folder sandbox.': '远程服务器必须支持 MCP Streamable HTTP。GitHub 链接需要已知配方或受支持的清单。本地服务器会在 CoS 文件夹沙箱之外运行。'
 };
 
 export type UiLanguage = NonNullable<UiPrefs['language']>;
