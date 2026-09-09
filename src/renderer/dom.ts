@@ -5,6 +5,8 @@
  * built from text, so a session title or a tool argument can never become markup.
  */
 
+import { translate } from './i18n.js';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** One icon from the sprite in index.html. */
@@ -46,7 +48,9 @@ let toastTimer: number | undefined;
 
 export function toast(message: string): void {
   document.querySelector('.toast')?.remove();
-  const node = el('div', 'toast', message);
+  // Callers use stable English message keys. Unknown or dynamic errors are
+  // intentionally returned unchanged by translate() as a safe fallback.
+  const node = el('div', 'toast', translate(message));
   document.body.append(node);
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => node.remove(), 3200);

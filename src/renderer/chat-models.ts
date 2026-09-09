@@ -3,6 +3,7 @@ import { chatModelDisplayLabel } from '../shared/chat-models.js';
 import type { Config } from '../shared/types.js';
 import type { ReasoningEffort } from '../shared/session.js';
 import { $, el, run } from './dom.js';
+import { translate } from './i18n.js';
 
 let catalog: ChatModelCatalog = { state: 'unknown', requestedAt: null, observedAt: null, models: [] };
 let generation = 0;
@@ -56,10 +57,10 @@ function options(select: HTMLSelectElement, choices: Array<{ id: string; label: 
   };
   const desired = choices.map(choice => option(choice.label, choice.id));
   if (!desired.length && !value) {
-    const unavailable = option('No observed choices', ''); unavailable.disabled = true; desired.push(unavailable);
+    const unavailable = option(translate('No observed choices'), ''); unavailable.disabled = true; desired.push(unavailable);
   }
   if (value && !choices.some(choice => choice.id === value)) {
-    const unverified = option(`${value} · not verified`, value);
+    const unverified = option(`${value} · ${translate('not verified')}`, value);
     unverified.disabled = true;
     desired.push(unverified);
   }
@@ -90,7 +91,7 @@ function paintPair(modelId: string, effortId: string, modelValue?: string, effor
     nextEffort = supported.includes('high') ? 'high' : supported[0] ?? '';
   }
   options(model, models, nextModel);
-  options(effort, (models.find(item => item.id === model.value)?.efforts ?? []).map(id => ({ id, label: effortNames[id] ?? id })), nextEffort);
+  options(effort, (models.find(item => item.id === model.value)?.efforts ?? []).map(id => ({ id, label: translate(effortNames[id] ?? id) })), nextEffort);
 }
 
 function paintComposerChoices(): void {
@@ -107,13 +108,13 @@ function paintComposerChoices(): void {
   powers.replaceChildren();
   // Order supported levels from Low upwards; never manufacture an unobserved step.
   const steps = choices.flatMap(choice => choice.efforts.map(power => ({
-    model: choice.id, modelLabel: choice.label, effort: power, label: chatModelDisplayLabel(choice.label, power, effortNames[power]!)
+    model: choice.id, modelLabel: choice.label, effort: power, label: chatModelDisplayLabel(choice.label, power, translate(effortNames[power]!))
   })));
   const title = document.getElementById('composerPowerTitle');
   const subtitle = document.getElementById('composerPowerModel');
   if (!steps.length) {
-    if (title) title.textContent = catalog.state === 'pending' ? 'Loading models…' : 'Models unavailable';
-    if (subtitle) subtitle.textContent = catalog.state === 'pending' ? 'Reading your ChatGPT account' : 'Reload models';
+    if (title) title.textContent = catalog.state === 'pending' ? translate('Loading models…') : translate('Models unavailable · retry discovery');
+    if (subtitle) subtitle.textContent = catalog.state === 'pending' ? translate('Reading your account’s model choices…') : translate('Reload models');
     return;
   }
   const current = steps.findIndex(step => step.model === selected.value && step.effort === effort.value);
@@ -122,10 +123,10 @@ function paintComposerChoices(): void {
   dots.append(...steps.map(() => el('span', 'power-dot')));
   const slider = document.createElement('input'); slider.type = 'range'; slider.min = '0'; slider.max = String(steps.length - 1); slider.step = '1';
   slider.value = String(Math.max(0, current));
-  slider.setAttribute('aria-label', 'Model and thinking effort');
+  slider.setAttribute('aria-label', translate('Model and thinking effort'));
   const show = () => {
     const step = steps[Number(slider.value)]!;
-    if (title) title.textContent = effortNames[step.effort] ?? step.effort;
+    if (title) title.textContent = translate(effortNames[step.effort] ?? step.effort);
     if (subtitle) subtitle.textContent = step.modelLabel;
     slider.setAttribute('aria-valuetext', step.label);
     track.style.setProperty('--power-position', `${steps.length > 1 ? Number(slider.value) / (steps.length - 1) * 100 : 100}%`);
@@ -133,9 +134,9 @@ function paintComposerChoices(): void {
   };
   if (current >= 0) show();
   else {
-    if (title) title.textContent = 'Choose a level';
-    if (subtitle) subtitle.textContent = 'Previous selection unavailable';
-    slider.setAttribute('aria-valuetext', 'Choose an available model and effort');
+    if (title) title.textContent = translate('Choose a level');
+    if (subtitle) subtitle.textContent = translate('Previous selection unavailable');
+    slider.setAttribute('aria-valuetext', translate('Select model'));
   }
   const choose = () => {
     if (composerContext) composerContext.edited = true;
@@ -164,8 +165,8 @@ function paintComposerLabel(): void {
   // Display the same admission decision as Send, including discovery and removed efforts.
   const confirmed = confirmedComposerModel();
   const label = confirmed
-    ? chatModelDisplayLabel(catalog.models.find(model => model.id === confirmed.model)!.label, confirmed.reasoningEffort, effortNames[confirmed.reasoningEffort]!)
-    : catalog.state === 'pending' ? 'Loading models…' : 'Select model';
+    ? chatModelDisplayLabel(catalog.models.find(model => model.id === confirmed.model)!.label, confirmed.reasoningEffort, translate(effortNames[confirmed.reasoningEffort]!))
+    : catalog.state === 'pending' ? translate('Loading models…') : translate('Select model');
   const node = $('composerModelLabel');
   node.textContent = label;
   node.title = label;
@@ -174,13 +175,13 @@ function paintComposerLabel(): void {
 
 function paintStatus(): void {
   paintComposerChoices();
-  const message = catalog.state === 'pending' ? 'Reading your account’s model choices…'
-    : catalog.state === 'ready' ? `Available in your ChatGPT account · checked ${new Date(catalog.observedAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    : catalog.error ?? 'Connect to ChatGPT to load your models.';
+  const message = catalog.state === 'pending' ? translate('Reading your account’s model choices…')
+    : catalog.state === 'ready' ? translate('Available in your ChatGPT account · checked {time}', { time: new Date(catalog.observedAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })
+    : catalog.error ? translate(catalog.error) : translate('Connect to ChatGPT to load your models.');
   for (const id of ['chatModelStatus', 'composerModelStatus']) {
     const node = document.getElementById(id);
     if (node) {
-      node.textContent = id === 'composerModelStatus' ? (catalog.state === 'pending' ? 'Loading models…' : catalog.error ?? 'Models unavailable · retry discovery') : message;
+      node.textContent = id === 'composerModelStatus' ? (catalog.state === 'pending' ? translate('Loading models…') : catalog.error ? translate(catalog.error) : translate('Models unavailable · retry discovery')) : message;
       if (id === 'composerModelStatus') node.hidden = catalog.state === 'ready';
     }
   }
@@ -191,7 +192,7 @@ function paintStatus(): void {
       button.disabled = false;
       if (id === 'refreshComposerModels') {
         button.hidden = false;
-        button.title = catalog.state === 'pending' ? 'Reading ChatGPT models' : 'Reload ChatGPT models';
+        button.title = catalog.state === 'pending' ? translate('Reading ChatGPT models') : translate('Reload ChatGPT models');
         button.setAttribute('aria-label', button.title);
       }
     }
