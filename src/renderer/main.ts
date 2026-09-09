@@ -32,7 +32,7 @@ import {
 import type { SwarmState } from '../shared/session.js';
 import { $, ago, el, icon, run, shortAgo, toast } from './dom.js';
 import { initLanguagePicker } from './language-picker.js';
-import { setUiLanguage } from './i18n.js';
+import { setUiLanguage, translate } from './i18n.js';
 import { chatApply, chatSettingsPatch, chatVisible, initChat, openChatView } from './chat.js';
 
 declare global {
@@ -1079,7 +1079,7 @@ function apply(next: AppState): void {
   $('wizard').classList.toggle('is-tidy', allDone && !showAllSteps);
   const expand = $<HTMLButtonElement>('wizExpand');
   expand.hidden = !allDone;
-  expand.textContent = showAllSteps ? 'Hide finished steps' : 'Show all steps';
+  expand.textContent = showAllSteps ? translate('Hide finished steps') : translate('Show all steps');
 
   const needsBinary = config.tunnel.kind !== 'manual';
   $('binaryState').textContent = !needsBinary
@@ -1706,6 +1706,7 @@ void (async () => {
   const swarm = await run(api.getSwarm());
   if (swarm) paintAgentFilter(swarm);
 })();
+
 
 
 
