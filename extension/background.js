@@ -1316,6 +1316,14 @@ async function discoverAccountSetups() {
   }));
   return { ok: true, candidates: candidates.filter(Boolean) };
 }
+async function autoConnectPreparedAccount() {
+  await load();
+  if (accountId || accountPairPending || accountSetupRequired || disconnected) return accountPairView();
+  const found = await discoverAccountSetups();
+  const candidate = found.candidates?.[0];
+  if (!candidate) return accountPairView();
+  return requestAccountPair(candidate.configuration, candidate.setupId);
+}
 async function progressAccountPair() {
   await load();
   if (!accountPairPending || accountPairPending.expiresAt <= Date.now()) return accountPairView();
@@ -2807,7 +2815,10 @@ function serializeTab(tab, operation) {
 }
 
 const HANDLERS = {
-  async account_pair_status() { return progressAccountPair(); },
+  async account_pair_status() {
+    await autoConnectPreparedAccount();
+    return progressAccountPair();
+  },
   async account_pair_discover() { return discoverAccountSetups(); },
   async account_pair_connect(message) {
     const found = await discoverAccountSetups();

@@ -103,7 +103,7 @@ export function requestAccountPairing(id: string, profile: Pick<Account, 'browse
     if (row.browser !== profile.browser || row.profileRef !== profile.profileRef) throw new Error('Pairing profile does not match');
     const existing = pending.get(id);
     if (existing && existing.expiresAt > Date.now()) throw new Error('Pairing already pending');
-    const pair = { nonce: randomBytes(32).toString('hex'), requestId: randomUUID(), expiresAt: Date.now() + PAIRING_TTL_MS, connectionVersion: row.connectionVersion, confirmed: false };
+    const pair = { nonce: randomBytes(32).toString('hex'), requestId: randomUUID(), expiresAt: Date.now() + PAIRING_TTL_MS, connectionVersion: row.connectionVersion, confirmed: setupId !== undefined };
     pending.set(id, pair); return { nonce: pair.nonce, requestId: pair.requestId, expiresAt: pair.expiresAt };
   });
 }
