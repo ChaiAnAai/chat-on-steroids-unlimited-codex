@@ -24,6 +24,8 @@ beforeEach(async () => {
   await write('docs/licenses/plugins/inventory.json', '[]');
   await write('docs/licenses/codex/LICENSE', 'Codex license fixture\n');
   await write('docs/licenses/codex/NOTICE', 'Codex notice fixture\n');
+  await write('src/shared/mcp-chinese-catalog.json', JSON.stringify({source:'https://github.com/punkpeye/awesome-mcp-servers/blob/fixture/README-zh.md'}));
+  await write('docs/licenses/awesome-mcp-servers/LICENSE', 'Chinese directory copyright and MIT permission\n');
   for (const name of ['README.md', 'COMPONENT-NOTICES.txt', 'LGPL-3.0.txt', 'GPL-3.0.txt', 'MPL-2.0.txt']) await write(`docs/licenses/native/${name}`, `Fixture ${name}\n`);
 });
 afterEach(async () => { await removeTempDir(root); });
@@ -35,6 +37,8 @@ it('preserves license and NOTICE text; check mode leaves the shipped inventory u
   expect(notice).toContain('Fixture attribution\n');
   expect(notice).toContain('Codex license fixture\n');
   expect(notice).toContain('Codex notice fixture\n');
+  expect(notice).toContain('Chinese directory copyright and MIT permission\n');
+  expect(notice).toContain('https://github.com/punkpeye/awesome-mcp-servers/blob/fixture/README-zh.md');
   await write('THIRD-PARTY-NOTICES.txt', 'other platform inventory');
   expect(generate('--check').status).toBe(0);
   expect(await fs.readFile(path.join(root, 'THIRD-PARTY-NOTICES.txt'), 'utf8')).toBe('other platform inventory');

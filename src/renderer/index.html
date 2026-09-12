@@ -4,6 +4,13 @@
     <meta charset="utf-8" />
     <title>Chat On Steroids</title>
     <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./workspace.css" />
+    <link rel="stylesheet" href="./artifact-viewer.css" />
+    <link rel="stylesheet" href="../../node_modules/photoswipe/dist/photoswipe.css" />
+    <link rel="stylesheet" href="./onboarding.css" />
+    <link rel="stylesheet" href="./accounts-panel.css" />
+    <link rel="stylesheet" href="./native-activity.css" />
+    <link rel="stylesheet" href="./skills.css" />
   </head>
   <body>
     <!-- Icon sprite. Inline so there is no request and no font, and every glyph
@@ -87,23 +94,7 @@
         <button class="btn" id="backToChat" type="button" hidden>← Back to chat</button>
         <div class="sidebar-brand"><span class="mark"><svg class="ico" viewBox="0 0 24 24"><use href="#i-mark" /></svg></span><strong>Chat On Steroids</strong></div>
         <button class="btn new-chat" id="newChat" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-plus" /></svg>New chat</button>
-      <nav id="tabs" aria-label="Settings navigation" hidden>
-        <button class="is-sel" data-tab="home" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-home" /></svg>Workspace
-        </button>
-        <button data-tab="usage" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>Usage</button>
-        <button data-tab="plugins" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-plus" /></svg>Plugins</button>
-<button data-tab="setup" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-steps" /></svg>Setup
-          <span class="badge" id="setupBadge" hidden></span>
-        </button>
-        <button data-tab="settings" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-chat" /></svg>Agents &amp; automation
-        </button>
-        <button data-tab="activity" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>Activity
-        </button>
-      </nav>          <section class="sidebar-sessions">
+          <section class="sidebar-sessions">
             <h2>
               Conversations
               <span class="acts">
@@ -122,11 +113,11 @@
             </div>
           </section>
 
-        <div class="sidebar-bottom"><button class="btn" id="workspaceSettings" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-gear" /></svg>Settings</button></div>
+        <div class="sidebar-bottom"><button class="btn" id="workspacePlugins" type="button" title="Plugins" aria-label="Plugins"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-6 6v4m-6-13v3a6 6 0 0 0 6 6" /></svg><span class="sr-only">Plugins</span></button><button class="btn" id="workspaceSettings" type="button" title="Settings" aria-label="Settings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gear" /></svg><span class="sr-only">Settings</span></button></div>
       </aside>
       <!-- ------------------------------------------------------------ header -->
       <header>
-        <span id="chatTitle">New chat</span>
+        <span id="chatTitle">New chat</span><span id="managementTitle"></span>
         <span class="mark"><svg class="ico" viewBox="0 0 24 24"><use href="#i-mark" /></svg></span>
         <span class="title">
           Chat On Steroids
@@ -149,7 +140,7 @@
             <em id="liveNote"></em>
           </span>
           <button class="power off" id="connectBtn" type="button">
-            <svg class="ico" viewBox="0 0 24 24"><use href="#i-power" /></svg>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use id="connectIcon" href="#i-power" /></svg>
             <span id="connectLabel">Connect</span>
           </button>
         </span>
@@ -174,6 +165,28 @@
       </div>
 
       <main>
+      <nav id="tabs" aria-label="Settings navigation" hidden>
+        <button data-tab="appearance" type="button">Appearance</button>
+        <button data-tab="skills" type="button">Skills</button>
+        <button class="is-sel" data-tab="home" type="button">
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-home" /></svg>Workspace
+        </button>
+        <button data-tab="usage" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>Usage</button>
+
+<button data-tab="setup" type="button">
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-steps" /></svg>Setup
+          <span class="badge" id="setupBadge" hidden></span>
+        </button>
+        <button data-tab="settings" type="button">
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-chat" /></svg>Agents &amp; automation
+        </button>
+        <button data-tab="activity" type="button">
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>Activity
+        </button>
+      </nav>
+<div id="settingsSaveFeedback" role="status" hidden></div>
+        <section class="panel appearance-panel" data-panel="appearance"><div class="settings-heading"><h1>Appearance</h1><p>A workspace that feels right, day and night.</p></div><div class="appearance-layout"><div class="appearance-controls"><section class="appearance-section"><h2>Theme</h2><p>Choose a theme or follow your system.</p><div class="theme-choices" role="group" aria-label="Theme"><button type="button" data-theme-choice="light" aria-pressed="false"><span class="theme-thumbnail theme-light" aria-hidden="true"><i></i><i></i></span><span>Light</span></button><button type="button" data-theme-choice="dark" aria-pressed="false"><span class="theme-thumbnail theme-dark" aria-hidden="true"><i></i><i></i></span><span>Dark</span></button><button type="button" data-theme-choice="system" aria-pressed="false"><span class="theme-thumbnail theme-system" aria-hidden="true"><i></i><i></i></span><span>System</span></button></div></section><section class="appearance-section"><h2>Accent color</h2><div class="accent-choices" role="group" aria-label="Accent color"><button type="button" data-accent-choice="neutral" aria-pressed="false"><i aria-hidden="true"></i><span>Neutral</span></button><button type="button" data-accent-choice="blue" aria-pressed="false"><i aria-hidden="true"></i><span>Blue</span></button><button type="button" data-accent-choice="teal" aria-pressed="false"><i aria-hidden="true"></i><span>Teal</span></button><button type="button" data-accent-choice="violet" aria-pressed="false"><i aria-hidden="true"></i><span>Violet</span></button><button type="button" data-accent-choice="amber" aria-pressed="false"><i aria-hidden="true"></i><span>Amber</span></button></div></section><section class="appearance-section"><label class="setting"><span class="setting-text"><b>Interface size</b><em>Text size; window zoom stays independent.</em></span><select id="interfaceSize" aria-label="Interface size"><option value="13">13 px</option><option value="14">14 px</option><option value="15">15 px</option><option value="16">16 px</option></select></label><label class="setting"><span class="setting-text"><b>Code size</b><em>Code blocks and tool output.</em></span><select id="codeSize" aria-label="Code size"><option value="12">12 px</option><option value="13">13 px</option><option value="14">14 px</option><option value="15">15 px</option><option value="16">16 px</option></select></label><label class="setting"><span class="setting-text"><b>Density</b><em>Space between controls and list items.</em></span><select id="appearanceDensity" aria-label="Density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label></section><button class="btn" id="resetAppearance" type="button">Restore default appearance</button></div><section id="appearancePreview" class="appearance-preview" aria-label="Live preview"></section></div></section>
+        <section class="panel skills-panel" data-panel="skills" id="skillsPanel"></section>
         <section class="panel plugins-panel" data-panel="plugins">
           <div class="plugins-content">
           <header class="plugin-page-head"><div><h1>Plugins</h1><p>Bring your favorite tools into the conversation.</p></div><div class="plugin-search-actions"><label class="plugin-search"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search" /></svg><input id="pluginsSearch" type="search" placeholder="Search plugins" aria-label="Search plugins" /></label><button class="btn plugin-add" id="pluginsAdd" type="button" aria-label="Add a plugin" title="Add a plugin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button></div></header>
@@ -184,6 +197,7 @@
           <div class="plugin-refresh-guide"><p>After installing, updating or changing enabled plugins, refresh <strong>Chat On Steroids Plugins</strong> in ChatGPT to make its tools available.</p><button class="btn" id="pluginsOpenChatGPT" type="button">Open ChatGPT plugins</button></div>
           <div class="plugin-section-head"><h2>Installed <span id="pluginsCount" class="plugin-count">Loading…</span></h2><button class="btn" id="pluginsRefresh" type="button">Check local status</button></div>
           <div id="pluginsInstalled" aria-live="polite"></div>
+          <section id="pluginMarketplace" class="plugin-marketplace"></section>
           <div class="plugin-section-head"><h2>Explore plugins</h2><span class="muted">Made for your workflow</span></div>
           <div id="pluginsExplore" class="plugin-directory"></div>
           <details class="plugin-legal"><summary>Legal Notices / Third-party Licenses</summary><p>Catalog illustrations are original Chat On Steroids artwork, Copyright © 2026 Chat On Steroids contributors, licensed under the app’s MIT license. They illustrate independent integrations and are not official product logos or endorsements. Product names belong to their respective owners.</p><p>Installed plugins retain their own licenses. Open a plugin’s details to see its source, version and license. Review the upstream project before installation. Bundled dependency notices and reviewed catalog license texts are included in THIRD-PARTY-NOTICES.txt with the application; external plugins are downloaded separately.</p><button class="btn" id="pluginsLegalOpen" type="button">Open full third-party license texts</button></details>
@@ -307,13 +321,15 @@
         <!-- =========================================================== Setup -->
         <section class="panel scroll" data-panel="setup">
           <div class="sheet">
+            <details class="card build-identity"><summary>About Chat On Steroids</summary><p id="buildIdentity" class="hint"></p></details>
             <div class="setup-heading">
               <div class="settings-heading"><h1>Setup</h1><p>Connect your workspace to ChatGPT.</p></div>
-              <div class="language-tabs" role="group" aria-label="Language">
-                <button type="button" data-language="en" lang="en" translate="no" aria-pressed="true"><svg class="language-flag" viewBox="0 0 60 40" aria-hidden="true"><path fill="#012169" d="M0 0h60v40H0z"/><path stroke="#fff" stroke-width="8" d="m0 0 60 40M60 0 0 40"/><path stroke="#c8102e" stroke-width="3" d="m0 0 60 40M60 0 0 40"/><path stroke="#fff" stroke-width="13" d="M30 0v40M0 20h60"/><path stroke="#c8102e" stroke-width="7" d="M30 0v40M0 20h60"/></svg>English</button>
-                <button type="button" data-language="zh-CN" lang="zh-CN" translate="no" aria-pressed="false"><svg class="language-flag" viewBox="0 0 60 40" aria-hidden="true"><path fill="#de2910" d="M0 0h60v40H0z"/><g fill="#ffde00"><path d="m10 5 1.8 5.5h5.7l-4.6 3.4 1.8 5.4-4.7-3.4-4.7 3.4 1.8-5.4-4.6-3.4h5.7z"/><path id="language-star" d="m20 3 .7 2.1h2.2l-1.8 1.3.7 2.1L20 7.2l-1.8 1.3.7-2.1-1.8-1.3h2.2z"/><use href="#language-star" transform="translate(5 5)"/><use href="#language-star" transform="translate(5 12)"/><use href="#language-star" transform="translate(0 17)"/></g></svg>简体中文</button>
-              </div>
             </div>
+            <div id="connectionOverview"></div>
+            <p class="connection-prerequisite" id="connectionPrerequisite" role="status" hidden></p>
+            <div id="connectionFeedback" hidden></div>
+            <details class="connection-details" id="connectionDetails">
+              <summary>Connection details</summary>
             <div class="lede">
               <p>
                 Six steps, once. Custom MCP apps need ChatGPT <strong>Developer mode</strong> on the
@@ -563,6 +579,7 @@
                 <label class="inline" id="privacyScreenshotsSetting"><input type="checkbox" id="privacyScreenshots" /> Privacy screenshots: default to the active window instead of the whole monitor</label>
                 <label class="inline"><input type="checkbox" id="developerMode" /> Developer mode: show turn boundaries and recovery events</label>
               </div>
+            </details>
             </details>
           </div>
         </section>
@@ -844,7 +861,7 @@
                 </div>
               </div>
             </div>
-            <div class="composer-dock" id="composerDock"><section class="agent-plan" id="agentPlan" aria-label="Agent task plan" hidden></section><div id="recoveryStatus" role="status" hidden></div><div id="taskPlanPreview" aria-label="Plan stages" hidden></div><div id="finishQueue" aria-label="Queued tasks" hidden></div><div id="activeGoalRow" hidden></div></div>
+            <div class="composer-dock" id="composerDock"><div id="taskStatus" class="task-status" role="status" aria-live="polite"></div><section class="agent-plan" id="agentPlan" aria-label="Agent task plan" hidden></section><div id="recoveryStatus" role="status" hidden></div><div id="taskPlanPreview" aria-label="Plan stages" hidden></div><div id="finishQueue" aria-label="Queued tasks" hidden></div><div id="activeGoalRow" hidden></div></div>
             <form class="composer" id="composer">
               <label class="sr-only" for="chatInput">Message ChatGPT</label>
               <div id="composerImages" class="composer-images" hidden></div><textarea dir="auto" id="chatInput" rows="1" maxlength="16000" placeholder="Ask anything…"></textarea>
@@ -905,7 +922,7 @@
                     </div>
                     <select id="sendMode" aria-label="Message delivery" hidden><option value="auto">Send</option><option value="after-turn">After this turn</option></select>
                   </div>
-                  <button class="send-button" id="chatSend" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+                  <button class="btn stop-button" id="chatStop" type="button" hidden>Stop turn</button><button class="send-button" id="chatSend" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
                 </div>
               </div>
               <p id="composerStatus" role="status" aria-live="polite"></p>

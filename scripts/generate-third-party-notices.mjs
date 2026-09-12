@@ -21,6 +21,10 @@ const notices = [
   ''
 ];
 const missing = [];
+const chineseCatalog = JSON.parse(await fs.readFile(path.join(root, 'src/shared/mcp-chinese-catalog.json'), 'utf8'));
+notices.push('='.repeat(80), 'Awesome MCP Servers — Chinese community descriptions',
+  `Source: ${chineseCatalog.source}`, 'Extracted Chinese descriptions; original metadata and publisher identity remain separate.',
+  await fs.readFile(path.join(root, 'docs/licenses/awesome-mcp-servers/LICENSE'), 'utf8'), '');
 notices.push('='.repeat(80), 'OpenAI Codex — adapted coding instructions and update_plan contract',
   'Source: https://github.com/openai/codex/tree/1a4096e273e80da30947e57fdfa45be92858ca91',
   'CoS adapts identity and available tools, removes Codex-specific facilities and adds bounded plan details and session storage.', '');

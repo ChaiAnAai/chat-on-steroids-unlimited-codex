@@ -12,7 +12,7 @@ vi.mock('electron', () => ({
     decryptStringAsync: async (buffer: Buffer) => ({ result: buffer.toString(), shouldReEncrypt: false })
   }
 }));
-const { defaultConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
+const { defaultConfig: productDefaultConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
 const { initSecretsPath, setSecret } = await import('../src/main/secrets.js');
 const { initDurableStore, resetDurableForTests, flushDurable, readDurable } = await import('../src/main/durable.js');
 const { appendEvent, createSession, initSessionStore, resetSessionStoreForTests } = await import('../src/main/session/store.js');
@@ -368,3 +368,6 @@ it('publishes readable partial plan stages while final validation remains author
   expect(progress).toHaveBeenCalledWith({ phase: 'generating', text: '1. Build the fea' });
   expect(progress.mock.calls.some(([update]) => update.phase === 'ready')).toBe(false);
 });
+
+// Retained advanced helper-policy regression fixture. New default is covered by workflow.test.ts.
+function defaultConfig(...args: Parameters<typeof productDefaultConfig>) { const config = productDefaultConfig(...args); config.goal.executionPolicy = 'legacy-helper'; return config; }

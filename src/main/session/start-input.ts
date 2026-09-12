@@ -1,13 +1,29 @@
 /** Explicit desktop sends bring up the existing connection/browser authorities. */
 import { connect, getStatus, onStatusChange } from '../connection.js';
+import { connectionRestriction } from './workflow.js';
 import { startBridge } from '../bridge.js';
 import { wakeBrowserUrl, resetBrowserStartupForTests } from '../browser-startup.js';
 import { getConfig } from '../config.js';
+import { inputAccount } from '../account-ownership.js';
 import { enqueueInput, cancelInput, listInputs, noteInputStartupError, type InputArgs, type InputEntry } from './input.js';
 
-function wakeBrowser(entry: InputEntry, retry = false): Promise<void> {
+async function wakeBrowser(entry: InputEntry, retry = false): Promise<void> {
   const marker = `cos-input=${encodeURIComponent(entry.id)}`;
-  return wakeBrowserUrl(entry.conversationId ? `https://chatgpt.com/c/${encodeURIComponent(entry.conversationId)}` : `https://chatgpt.com/?${marker}#${marker}`, retry, getConfig().ui.backgroundChats === true);
+  const url = entry.conversationId ? `https://chatgpt.com/c/${encodeURIComponent(entry.conversationId)}` : `https://chatgpt.com/?${marker}#${marker}`;
+  if (entry.accountId) {
+    const { getAccount, assertAccountConnection } = await import('../accounts.js');
+    const account = await getAccount(entry.accountId);
+    if (!account) throw new Error('Account not found');
+    await assertAccountConnection({ accountId: account.id, connectionVersion: account.connectionVersion, surface: 'bridge' });
+    const { app } = await import('electron');
+    const { accountBrowserTarget } = await import('../account-management.js');
+    const { openInPreferredBrowser } = await import('../browser.js');
+    const target = await accountBrowserTarget(app.getPath('userData'), account);
+    await assertAccountConnection({ accountId: account.id, connectionVersion: account.connectionVersion, surface: 'bridge' });
+    await openInPreferredBrowser(url, { browser: account.browser, ...target });
+    return;
+  }
+  return wakeBrowserUrl(url, retry, getConfig().ui.backgroundChats === true);
 }
 async function ready(signal?: AbortSignal): Promise<void> {
   await connect();
@@ -47,6 +63,8 @@ export async function cancelDesktopInput(id: string): Promise<boolean> {
   return cancelInput(id);
 }
 export async function sendDesktopInput(input: InputArgs): Promise<InputEntry> {
+  const restriction = await connectionRestriction(await inputAccount(input));
+  if (restriction) throw new Error(`Connection paused: ${restriction}`);
   if (input.mode === 'finish') return enqueueInput(input);
   if (starting.has(input.id)) throw new Error('Input already starting');
   const controller = new AbortController(); starting.set(input.id, controller);

@@ -154,6 +154,7 @@ export function createWindowsComputerApi(backend: WindowsComputerBackend = { act
         focused: result.screenshot?.focused ?? (result.window.state ? result.window.state === 'foreground' : null),
         screenshots,
         ...(includeUi && result.uiUnavailable ? { accessibility_error: result.uiUnavailable } : {}),
+        ...(includeUi && result.uiTextUnavailable ? { accessibility_text_error: result.uiTextUnavailable } : {}),
         accessibility
       };
     },

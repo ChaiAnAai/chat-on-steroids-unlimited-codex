@@ -7,11 +7,11 @@ const script = await readFile(new URL('../extension/popup.js', import.meta.url),
 let popup: JSDOM | undefined;
 afterEach(() => { popup?.window.close(); });
 
-function openPopup(reload: () => void) {
+function openPopup(reload: () => void, sendMessage?: (message: Record<string, unknown>) => Promise<unknown>) {
   popup = new JSDOM(html, { url: 'https://extension-popup.test/', runScripts: 'outside-only' });
   const unavailable = () => new Promise(() => undefined);
   Object.assign(popup.window, {
-    chrome: { runtime: { reload, sendMessage: unavailable }, storage: { local: { get: unavailable } } },
+    chrome: { runtime: { reload, sendMessage: sendMessage ?? unavailable }, storage: { local: { get: unavailable } } },
     setInterval: () => 0
   });
   popup.window.eval(script);
@@ -67,4 +67,32 @@ it('keeps blocked delivery distinct from network unreachability and requires pai
   const result = (popup!.window as any).pipeline({ isChat: true, recorder: true, page: { events: 1 }, pending: 1 }, false);
   expect(result.why[1]).toContain('protocol compatibility');
   expect(result.why[1]).not.toContain('not reachable');
+});
+it('shows the safe request ID for main confirmation and never receives the claim credential', async () => {
+  const requests: Record<string, unknown>[] = [];
+  const document = openPopup(vi.fn(), async message => {
+    requests.push(message);
+    if (message.type === 'account_pair_request') return { ok: true, pending: true, expiresAt: Date.now() + 100000, requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' };
+    if (message.type === 'account_pair_claim') return { ok: true, paired: true, pending: false, identityPending: true };
+    return new Promise(() => undefined);
+  });
+  const configuration = document.getElementById('accountConfiguration') as HTMLTextAreaElement; configuration.value = '{"accountId":"local-config"}';
+  document.getElementById('accountRequestBtn')!.click();
+  await vi.waitFor(() => expect(document.getElementById('accountPairStatus')!.textContent).toContain('cccccccc'));
+  expect(requests.find(row => row.type === 'account_pair_request')).toEqual({ type: 'account_pair_request', configuration: configuration.value });
+  document.getElementById('accountClaimBtn')!.click();
+  await vi.waitFor(() => expect(document.getElementById('accountPairStatus')!.textContent).toContain('身份待验证'));
+  expect(requests.find(row => row.type === 'account_pair_claim')).toEqual({ type: 'account_pair_claim' });
+});
+it('retains configuration and exposes manual retry after an unconfirmed claim without polling claim again', async () => {
+  let claims = 0;
+  const document = openPopup(vi.fn(), async message => {
+    if (message.type === 'account_pair_request') return { ok: true, pending: true, expiresAt: Date.now() + 100000, requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' };
+    if (message.type === 'account_pair_claim') { claims++; return { ok: false, error: 'pairing_pending_or_invalid', message: 'Confirm in 知行 first' }; }
+    return new Promise(() => undefined);
+  });
+  const configuration = document.getElementById('accountConfiguration') as HTMLTextAreaElement; configuration.value = 'retained configuration';
+  document.getElementById('accountRequestBtn')!.click(); await vi.waitFor(() => expect((document.getElementById('accountClaimBtn') as HTMLButtonElement).disabled).toBe(false));
+  document.getElementById('accountClaimBtn')!.click(); await vi.waitFor(() => expect(document.getElementById('accountPairStatus')!.textContent).toContain('Confirm in 知行'));
+  expect(configuration.value).toBe('retained configuration'); expect(claims).toBe(1); expect((document.getElementById('accountClaimBtn') as HTMLButtonElement).disabled).toBe(false);
 });

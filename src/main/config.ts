@@ -1,3 +1,4 @@
+import { appearanceSchema, DEFAULT_APPEARANCE } from '../shared/appearance.js';
 import { REASONING_EFFORTS } from '../shared/session.js';
 /**
  * Non-secret settings, stored as one small JSON file in the app's userData folder.
@@ -141,6 +142,7 @@ const DEFAULT_ARTIFACTS: ArtifactSettings = {
  */
 export { DEFAULT_GOAL_MODEL } from '../shared/goal.js';
 const DEFAULT_GOAL: GoalSettings = {
+  executionPolicy: 'same-session', reservePercent: 10, warningPercent: 20,
   backend: 'chatgpt',
   loopBackend: 'chatgpt',
   impulseMinutes: 0,
@@ -184,7 +186,7 @@ const ALL_FIRST_LAUNCH_CAPABILITIES: Capabilities = Object.fromEntries(
 // absent when that config was written.
 const FIRST_LAUNCH_MULTI_AGENT: MultiAgentSettings = {
   ...DEFAULT_MULTI_AGENT,
-  enabled: true,
+  enabled: false,
   allowUnattributedCalls: true
 };
 
@@ -284,6 +286,8 @@ const configSchema = z.object({
     binaryPath: z.string().max(4096)
   }),
   ui: z.object({
+    language: z.enum(['en', 'zh-CN']).optional(),
+    proxyConnection: z.object({ endpoint: z.string().max(2000), model: z.string().max(200).optional() }).optional(),
     chatBrowser: z.enum(CHAT_BROWSERS).optional().default('chrome'),
     developerMode: z.boolean().optional(),
     finishTool: z.boolean().optional(),
@@ -301,7 +305,8 @@ const configSchema = z.object({
     // Dark is the design the app is drawn for, and a config written before the theme
     // existed has no stored answer to override — so it is the default rather than the
     // fallback. An explicit `light` is somebody's own choice and is never touched.
-    theme: z.enum(['light', 'dark']).optional().default('dark')
+    appearance: appearanceSchema.default({ ...DEFAULT_APPEARANCE }),
+    theme: z.enum(['light', 'dark', 'system']).optional().default('dark')
   }),
   // Whole sections are optional, so a config written by an older build keeps working
   // and simply gains the new features switched off. The default object is spelled out
@@ -366,6 +371,9 @@ const configSchema = z.object({
     .object({
       impulseMinutes: z.number().int().min(0).max(60).optional().default(0).catch(0),
       includeToolCalls: z.boolean().optional().default(false),
+      executionPolicy: z.enum(['same-session', 'legacy-helper']).optional().default('same-session'),
+      reservePercent: z.number().min(0).max(50).optional().default(10),
+      warningPercent: z.number().min(0).max(100).optional().default(20),
       enabled: z.boolean().optional().default(DEFAULT_GOAL.enabled),
       backend: z.enum(['api', 'chatgpt', 'templates']).optional().default('chatgpt'),
       loopBackend: z.enum(['api', 'chatgpt']).optional().default('chatgpt'),
@@ -436,7 +444,7 @@ const configSchema = z.object({
         .catch(DEFAULT_GOAL.loopPrompt)
     })
     .optional()
-    .default({ ...DEFAULT_GOAL, backend: 'chatgpt', loopBackend: 'chatgpt', impulseMinutes: 0, includeToolCalls: false, helperModel: 'gpt-5.6-sol', helperReasoning: 'high' }),
+    .default({ ...DEFAULT_GOAL, executionPolicy: 'same-session', reservePercent: 10, warningPercent: 20, backend: 'chatgpt', loopBackend: 'chatgpt', impulseMinutes: 0, includeToolCalls: false, helperModel: 'gpt-5.6-sol', helperReasoning: 'high' }),
   mcp: z
     .object({
       // Repaired rather than rejected, like the Goal prompts above: this is free text a person
@@ -473,7 +481,7 @@ export function defaultConfig(platform: NodeJS.Platform = process.platform, rele
     capabilities: firstLaunchCapabilities(platform, release),
     readOnly: false,
     tunnel: { kind: 'openai', tunnelId: '', desktopTunnelId: '', binaryPath: '' },
-    ui: { minimizeToTray: true, autoConnect: false, startAtLogin: false, privacyScreenshots: false, theme: 'dark', autoRefreshPlugins: false, backgroundChats: true },
+    ui: { minimizeToTray: true, autoConnect: false, startAtLogin: false, privacyScreenshots: false, theme: 'dark', appearance: { ...DEFAULT_APPEARANCE }, autoRefreshPlugins: false, backgroundChats: true },
     sessions: { ...DEFAULT_SESSIONS },
     compaction: { ...DEFAULT_COMPACTION },
     multiAgent: { ...FIRST_LAUNCH_MULTI_AGENT },

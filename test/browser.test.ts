@@ -5,6 +5,14 @@ import { findPreferredBrowser, isPreferredBrowserRunning, openInPreferredBrowser
 import { runPowerShell } from '../src/main/exec.js';
 
 describe('browser-backed ChatGPT commands', () => {
+  it('opens an explicit existing profile with separate literal root and profile arguments', async () => {
+    const launch = vi.fn(async (_command: string, _args: readonly string[], _cwd: string) => ({ pid: 123 }));
+    await openInPreferredBrowser('https://chatgpt.com/', { browser: 'chrome', platform: 'win32', env: { ProgramFiles: 'C:\\Program Files' }, usable: () => true, launch,
+      profileDirectory: 'C:\\Users\\User\\AppData\\Local\\Google\\Chrome\\User Data', profileName: 'Profile 2' });
+    expect(launch.mock.calls[0]?.[1]).toEqual(['--user-data-dir=C:\\Users\\User\\AppData\\Local\\Google\\Chrome\\User Data', '--profile-directory=Profile 2', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', 'https://chatgpt.com/']);
+    await expect(openInPreferredBrowser('https://chatgpt.com/', { profileDirectory: 'C:\\data', profileName: '../Default', launch })).rejects.toThrow('Invalid browser profile');
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
   it('launches selected Edge when Chrome is also installed', async () => {
     const edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
     const chrome = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';

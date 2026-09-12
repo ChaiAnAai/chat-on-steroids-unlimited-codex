@@ -3,7 +3,7 @@ export const UI_BASE_ZOOM = 1.3;
 
 /** Native Windows caption controls share the renderer's compact title-bar row. */
 export function titleBarOverlayForTheme(theme: 'dark' | 'light') {
-  return { height: 36, color: theme === 'dark' ? '#1a2129' : '#f4f4f5',
+  return { height: 36, color: theme === 'dark' ? '#202226' : '#f4f5f7',
     symbolColor: theme === 'dark' ? '#b8c0c5' : '#46545e' };
 }
 

@@ -16,6 +16,7 @@ function harness(status = 200, unavailableSocket = false) {
     constructor(public url: string) { if (unavailableSocket) throw new Error('WebSocket unavailable'); sockets.push(this); }
   }
   const context = vm.createContext({ WebSocket: Socket, token: 'paired-secret', disconnected: false, port: 8765,
+    accountId: null, accountVersion: null, accountSetupRequired: false, accountIdentityPending: false, connectionEpoch: 0,
     discover: async () => ({ port: 8765, compatible: true }), load: async () => {},
     fetchBounded: async () => ({ ok: status === 200, status, json: async () => ({}) }),
     REQUEST_TIMEOUT_MS: 15000, TIMED_OUT: 'timed_out', versionHeaders: () => ({}), maintain,

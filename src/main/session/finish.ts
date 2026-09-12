@@ -164,6 +164,7 @@ async function prepareNotice(sessionId: string, summary: string, userRequested =
 
 /** Release is an app-authored fact in the existing transcript, scoped to exact turn + frontend. */
 export async function sessionFinishHeld(sessionId: string, turnId: string | null | undefined, conversationId: string | null): Promise<boolean> {
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') return false;
   if (!getConfig().ui.finishTool || !turnId || !conversationId || isChatBlocked(conversationId)) return false;
   return !(await finishReleased(sessionId, turnId, conversationId));
 }
@@ -229,6 +230,10 @@ async function waitForFinishBoundary(sessionId: string, turnId: string, conversa
 
 /** HELD is a model instruction, not a server-side lock on ChatGPT finalization. */
 export async function announceSessionFinish(sessionId: string, summary: string): Promise<string> {
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') {
+    const current = await getSession(sessionId);
+    return `No finish hold or helper request was started. Complete the meaningful work in this turn, report session(action="checkpoint") with revision ${current?.workflow?.revision ?? 0}, then finish. A checkpoint is a model report, not independent verification.`;
+  }
   const deadline = Date.now() + 25000;
   const session = await getSession(sessionId);
   const call = currentCall();

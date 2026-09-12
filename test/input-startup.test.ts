@@ -7,6 +7,12 @@ vi.mock('../src/main/bridge.js', () => ({ bridgeStatus: async () => ports.browse
 vi.mock('../src/main/browser.js', () => ({ openInPreferredBrowser: ports.open, isPreferredBrowserRunning: async () => ports.running }));
 vi.mock('../src/main/config.js', () => ({ getConfig: () => ({ ui: { backgroundChats: ports.backgroundChats } }) }));
 vi.mock('../src/main/session/input.js', () => ({ enqueueInput: ports.enqueue, cancelInput: ports.cancel, noteInputStartupError: ports.note, listInputs: async () => ports.rows }));
+vi.mock('../src/main/session/store.js', async original => ({
+  ...await original<typeof import('../src/main/session/store.js')>(),
+  // The existing target is a known legacy session; a string alone is not ownership evidence.
+  getSession: async (id: string) => id === 'session-existing'
+    ? { id, conversationId: 'exact-conversation', accountId: undefined } : null
+}));
 import { sendDesktopInput, cancelDesktopInput, retryQueuedInputBrowser, resetInputStartupForTests } from '../src/main/session/start-input.js';
 const request: InputArgs = { id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', sessionId: null, text: 'Please start', mode: 'auto', dueAt: 0, model: null, reasoningEffort: null };
 beforeEach(() => {

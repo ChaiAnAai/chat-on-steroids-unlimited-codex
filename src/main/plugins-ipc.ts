@@ -1,8 +1,11 @@
 import { app, dialog, shell, type BrowserWindow } from 'electron';
+import { manageMcpLibrary } from './plugins/library.js';
+import { pluginRuntimeCheck } from './plugins/installer.js';
 import path from 'node:path';
 import { z } from 'zod';
 import { pluginManager } from './plugins/manager.js';
 import { refreshPluginPublication } from './connection.js';
+import { pluginRegistry, registryQuery, registryReference, registryIconQuery } from './plugins/registry.js';
 
 const values = z.record(z.string().min(1).max(128), z.string().max(16_384)).refine(value => Object.keys(value).length <= 64, 'At most 64 configuration fields');
 const source = z.object({
@@ -13,7 +16,7 @@ const source = z.object({
   url: z.string().max(4096).optional(), path: z.string().max(4096).optional(), auth: z.literal('oauth').optional()
 }).strict();
 const patch = z.object({ source: source.optional(), name: z.string().min(1).max(100).optional(), config: values.optional(), credentials: values.optional() }).strict();
-const install = patch.extend({ catalogId: z.string().max(80).optional() });
+const install = patch.extend({ catalogId: z.string().max(80).optional(), registry: registryReference.optional() });
 const identity = z.object({ id: z.string().min(1).max(80) });
 type Register = <T>(channel: string, fn: (payload: unknown) => Promise<T>) => void;
 
@@ -24,6 +27,10 @@ export function registerPluginIpc(handle: Register, getWindow: () => BrowserWind
     if (error) throw new Error('Could not open the bundled Third-party Notices file.');
   });
   handle('plugins:snapshot', async () => pluginManager.snapshot());
+  handle('plugins:library', manageMcpLibrary);
+  handle('plugins:preflight', async payload => pluginRuntimeCheck(z.object({ kind: z.enum(['npm', 'python', 'remote']) }).strict().parse(payload).kind));
+  handle('plugins:registrySearch', async payload => pluginRegistry.search(registryQuery.parse(payload)));
+  handle('plugins:registryIcon', async payload => pluginRegistry.icon(registryIconQuery.parse(payload)));
   handle('plugins:install', async payload => { await pluginManager.install(install.parse(payload)); return pluginManager.snapshot(); });
   handle('plugins:configure', async payload => {
     const input = identity.extend({ patch }).strict().parse(payload);

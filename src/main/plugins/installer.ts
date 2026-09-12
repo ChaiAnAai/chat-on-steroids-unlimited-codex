@@ -273,6 +273,14 @@ export async function installSource(source: PluginSource, dir: string): Promise<
   throw new Error('Unsupported installation source');
 }
 
+export async function pluginRuntimeCheck(kind: 'npm' | 'python' | 'remote'): Promise<{ ready: boolean; runtime: string }> {
+  if (kind === 'remote') return { ready: true, runtime: 'remote' };
+  try {
+    const executable = await findExecutable(kind === 'npm' ? 'node' : 'uv');
+    if (kind === 'npm' && process.platform === 'win32') await fs.access(path.join(path.dirname(executable), 'node_modules/npm/bin/npm-cli.js'));
+    return { ready: true, runtime: kind === 'npm' ? 'Node.js + npm' : 'uv' };
+  } catch { return { ready: false, runtime: kind === 'npm' ? 'Node.js + npm' : 'uv' }; }
+}
 async function findExecutable(name: string): Promise<string> {
   for (const dir of pathEntries(pluginEnvironment())) {
     const full = path.join(dir, name + (process.platform === 'win32' ? '.exe' : ''));

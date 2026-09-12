@@ -317,7 +317,7 @@ export type SessionEvent =
    * neither affects identity. `origin` names the seq of the first record of that site object,
    * for readers working from a cursor that has already consumed it.
    */
-  | (BaseEvent & { kind: 'page_tool'; messageId: string; label: string; origin?: number })
+  | (BaseEvent & { kind: 'page_tool'; messageId: string; label: string; detail?: string; origin?: number })
   /**
    * `detail` names an app-authored reopening: the page reported this turn ended, and a tool
    * call under the same server turn then proved it had not. Absent on the page's own starts.
@@ -431,12 +431,16 @@ export function originTitle(origin: SessionOrigin, source: string | null): strin
 }
 
 export interface SessionSummary {
+  /** Same-session control intent, persisted by the session store alongside its turn identity. */
+  workflow?: import('./workflow.js').SessionWorkflow;
   /** Durable naming authority; absent only on legacy recordings. */
   titleSource?: 'fallback' | 'provider' | 'manual';
   /** Latest proven native picker selection; scoped to its frontend, never worker creation intent. */
   selectedModel?: { conversationId: string; model: string; observedAt: number; reasoningEffort?: ReasoningEffort };
   /** Explicit local project; durable across frontend conversation replacement. */
   projectId?: string;
+  /** Fixed local account owner. Missing means unconfirmed legacy history. */
+  accountId?: string;
   id: string;
   title: string;
   /**
@@ -901,7 +905,7 @@ export function foldProgress(events: readonly SessionEvent[]): SessionEvent[] {
     if (held && held.kind === 'progress' && event.kind === 'progress') {
       out[at] = { ...held, message: event.message };
     } else if (held && held.kind === 'page_tool' && event.kind === 'page_tool') {
-      out[at] = { ...held, label: event.label };
+      out[at] = { ...held, label: event.label, ...(event.detail !== undefined ? { detail: event.detail } : {}) };
     }
     out[index] = null;
   }

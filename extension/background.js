@@ -40,7 +40,7 @@ const MODEL_REQUEST_TIMEOUT_MS = 190_000;
 /** The reason a deadline aborts with, so it is a fact the caller can act on rather than prose. */
 const TIMED_OUT = 'the app took too long to answer';
 /** Bumped only when the request/response shape changes; the app compares it. */
-const BRIDGE_PROTOCOL = 13;
+const BRIDGE_PROTOCOL = 14;
 
 /**
  * Journal caps. The byte figure is what actually matters — chrome.storage.session has a
@@ -78,6 +78,16 @@ let retryAlarmScheduled = false;
 
 let port = null;
 let token = null;
+// Main-process-confirmed account pairing only. Content messages cannot set these values.
+let accountId = null;
+let accountVersion = null;
+let accountSetupRequired = false;
+let accountIdentityPending = false;
+let accountConfig = null;
+let accountPairPending = null;
+let accountPairClaim = null;
+const ACCOUNT_SETUP_MESSAGE = 'Account connection needs setup in 知行. Use the account configuration and two-step pairing guide below. Automatic delivery remains paused until login identity is verified.';
+const ACCOUNT_IDENTITY_MESSAGE = 'Pairing is saved. Login identity is awaiting verification; automatic delivery and old receipts remain paused.';
 let loaded = false;
 /**
  * The one `load()` in flight, shared by everything that has to wait for it.
@@ -251,9 +261,17 @@ function load() {
 }
 
 async function loadOnce() {
-  const stored = await chrome.storage.local.get(['port', 'token', 'disconnected', 'deferredRevivals', 'commandAckOutbox', 'inputOpenings', 'desktopInputTabs', 'stopOpenings']);
+  const stored = await chrome.storage.local.get(['port', 'token', 'accountId', 'accountVersion', 'accountSetupRequired', 'accountIdentityPending', 'accountConfig', 'disconnected', 'deferredRevivals', 'commandAckOutbox', 'inputOpenings', 'desktopInputTabs', 'stopOpenings']);
   port = typeof stored.port === 'number' ? stored.port : null;
   token = typeof stored.token === 'string' ? stored.token : null;
+  accountId = typeof stored.accountId === 'string' && stored.accountId ? stored.accountId : null;
+  accountVersion = Number.isSafeInteger(stored.accountVersion) && stored.accountVersion > 0 ? stored.accountVersion : null;
+  accountConfig = parseAccountConfig(stored.accountConfig);
+  accountIdentityPending = !!accountId && stored.accountIdentityPending !== false;
+  const hasAccountStorage = stored.accountId != null || stored.accountVersion != null;
+  accountSetupRequired = stored.accountSetupRequired === true || (hasAccountStorage &&
+    (!accountId || !/^[a-f0-9-]{36}$/i.test(accountId) || !accountVersion || !token));
+  if (accountSetupRequired) pairingError = { error: 'account_pairing_required', message: ACCOUNT_SETUP_MESSAGE };
   // Deliberately in `local` rather than `session`: a choice to disconnect that a browser
   // restart undoes is not a choice, it is a delay.
   disconnected = stored.disconnected === true;
@@ -278,8 +296,13 @@ async function loadOnce() {
     'commandAckOutbox',
     'recoveryMonitoring',
     'discardProtectedTabs',
-    'delivery'
+    'delivery',
+    'accountPairPending'
   ]);
+  const savedPair = live.accountPairPending;
+  if (!disconnected && savedPair && accountConfig && savedPair.accountId === accountConfig.accountId &&
+      typeof savedPair.nonce === 'string' && /^[a-f0-9]{64}$/i.test(savedPair.nonce) && typeof savedPair.requestId === 'string' && /^[a-f0-9-]{36}$/i.test(savedPair.requestId) &&
+      Number.isInteger(savedPair.port) && savedPair.port >= 1 && savedPair.port <= 65535 && Number.isFinite(savedPair.expiresAt) && savedPair.expiresAt > Date.now()) accountPairPending = savedPair;
   settled = Array.isArray(live.settled) ? live.settled : [];
   journal = Array.isArray(live.journal) ? live.journal : [];
   tabConversations =
@@ -315,8 +338,17 @@ async function loadOnce() {
   loaded = true;
 }
 
-async function persist() {
-  await chrome.storage.local.set({ port, token, disconnected });
+let connectionWriteQueue = Promise.resolve();
+function persist() {
+  const snapshot = { port, token, accountId, accountVersion, accountSetupRequired, accountIdentityPending, accountConfig, disconnected };
+  const write = connectionWriteQueue.then(() => chrome.storage.local.set(snapshot));
+  connectionWriteQueue = write.catch(() => undefined); return write;
+}
+let accountPairWriteQueue = Promise.resolve();
+function persistAccountPair() {
+  const snapshot = accountPairPending ? { ...accountPairPending } : null;
+  const write = accountPairWriteQueue.then(() => chrome.storage.session.set({ accountPairPending: snapshot }));
+  accountPairWriteQueue = write.catch(() => undefined); return write;
 }
 
 let liveWriteQueue = Promise.resolve();
@@ -898,6 +930,7 @@ async function fetchBounded(url, init = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
  * the worker goes back to sleep until a page or the browser wakes it.
  */
 function retryWanted() {
+  if (accountSetupRequired || accountIdentityPending) return false;
   // Paired at all is reason enough. The app hands out reopen/reload work only when this worker
   // asks for it, and after a browser restart this worker holds no tabs and no queues — which is
   // exactly when a Loop chat the user closed is waiting to be opened again. On 2026-09-02 a Loop
@@ -941,6 +974,7 @@ async function hello(candidate) {
   try {
     const response = await fetchBounded(`http://127.0.0.1:${candidate}/hello`, {
       cache: 'no-store',
+      redirect: 'error',
       headers: versionHeaders()
     }, HELLO_TIMEOUT_MS);
     if (!response.ok) return null;
@@ -976,7 +1010,7 @@ async function discover(force = false) {
     if (Date.now() - portCheckedAt < PORT_TRUST_MS) return { port, paired: token !== null, compatible: portCompatible !== false, version: appVersion, bridge: appProtocol };
     const body = await hello(port);
     if (body) {
-      if (body.disconnected === true) await latchAppDisconnect();
+      if (!accountId && !accountSetupRequired && body.disconnected === true) await latchAppDisconnect();
       portCheckedAt = Date.now();
       portCompatible = body.compatible !== false && body.bridge === BRIDGE_PROTOCOL;
       appVersion = typeof body.version === 'string' ? body.version : null;
@@ -987,7 +1021,7 @@ async function discover(force = false) {
   for (const candidate of PORTS) {
     const body = await hello(candidate);
     if (body) {
-      if (body.disconnected === true) await latchAppDisconnect();
+      if (!accountId && !accountSetupRequired && body.disconnected === true) await latchAppDisconnect();
       port = candidate;
       portCheckedAt = Date.now();
       portCompatible = body.compatible !== false && body.bridge === BRIDGE_PROTOCOL;
@@ -1029,7 +1063,12 @@ async function latchAppDisconnect() {
 /** One authenticated request. Returns { ok, status, data } and never throws. */
 async function call(path, init = {}, retried = false) {
   await load();
+  const callEpoch = connectionEpoch;
+  if (accountIdentityPending) return { ok: false, error: 'account_identity_pending', needsSetup: true, message: ACCOUNT_IDENTITY_MESSAGE };
+  if (accountSetupRequired) return accountSetupResult();
   const found = await discover();
+  if (callEpoch !== connectionEpoch) return { ok: false, error: 'stale_connection' };
+  if (accountSetupRequired) return accountSetupResult();
   if (!found) return { ok: false, status: 0, error: 'app_not_found' };
   if (found.compatible === false) return { ok: false, status: 426, error: 'incompatible_extension' };
   if (!token) {
@@ -1051,12 +1090,19 @@ async function call(path, init = {}, retried = false) {
         headers: {
           ...(init.body ? { 'content-type': 'application/json' } : {}),
           ...versionHeaders(),
+          ...(accountId ? { 'x-account-id': accountId, 'x-account-version': String(accountVersion) } : {}),
           authorization: `Bearer ${token}`
         }
       },
       timeoutMs
     );
     const data = await response.json().catch(() => ({}));
+    if (callEpoch !== connectionEpoch) return { ok: false, error: 'stale_connection' };
+    if (accountSetupRequired) return accountSetupResult();
+    if (data?.error === 'account_pairing_required' || (accountId && response.status === 401)) {
+      await requireAccountSetup();
+      return accountSetupResult();
+    }
     if (response.status === 401) {
       if (data && data.error === 'browser_disconnected') {
         await latchAppDisconnect();
@@ -1134,6 +1180,12 @@ function provision(reconnect = false) {
 }
 
 async function pairOnce(intent = connectionEpoch, reconnect = false) {
+  await load();
+  // A scoped credential must never fall back to minting/replacing a global bridge token.
+  if (accountId || accountVersion || accountSetupRequired) {
+    await requireAccountSetup();
+    return accountSetupResult();
+  }
   const found = await discover(true);
   if (!found) return { ok: false, error: 'app_not_found' };
   if (found.compatible === false) return { ok: false, error: 'incompatible_extension' };
@@ -1145,6 +1197,10 @@ async function pairOnce(intent = connectionEpoch, reconnect = false) {
       body: JSON.stringify(reconnect ? { reconnect: true } : {})
     });
     const data = await response.json().catch(() => ({}));
+    if (data?.error === 'account_pairing_required') {
+      await requireAccountSetup();
+      return accountSetupResult();
+    }
     if (!response.ok || typeof data.token !== 'string') {
       if (data && data.error === 'browser_disconnected') {
         await latchAppDisconnect();
@@ -1164,6 +1220,110 @@ async function pairOnce(intent = connectionEpoch, reconnect = false) {
   } catch (err) {
     return { ok: false, error: String(err && err.message ? err.message : err) };
   }
+}
+
+function accountSetupResult() {
+  return { ok: false, status: 401, error: 'account_pairing_required', needsSetup: true, message: ACCOUNT_SETUP_MESSAGE };
+}
+
+async function requireAccountSetup() {
+  accountSetupRequired = true;
+  pairingError = { error: 'account_pairing_required', message: ACCOUNT_SETUP_MESSAGE };
+  closeWakeSocket();
+  clearRetryIfIdle();
+  // Keep the old account and receipts for diagnosis. Rejected delivery is not a new pairing grant.
+  await persist();
+}
+
+function parseAccountConfig(value) {
+  try {
+    if (typeof value === 'string') { if (value.length > 2048) return null; value = JSON.parse(value); }
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['accountId', 'profileRef', 'browser', 'port'].includes(key))) return null;
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuid.test(value.accountId) || !uuid.test(value.profileRef) || !['chrome', 'edge'].includes(value.browser) ||
+        (value.port !== undefined && (!Number.isInteger(value.port) || value.port < 1 || value.port > 65535))) return null;
+    return { accountId: value.accountId, profileRef: value.profileRef, browser: value.browser, ...(value.port !== undefined ? { port: value.port } : {}) };
+  } catch { return null; }
+}
+function accountPairView() {
+  return { ok: true, configuration: accountConfig, paired: !!accountId && !!token && !accountSetupRequired && !disconnected,
+    identityPending: accountIdentityPending, pending: !!accountPairPending && accountPairPending.expiresAt > Date.now(),
+    requestId: accountPairPending?.requestId ?? null, expiresAt: accountPairPending?.expiresAt ?? null, ...(pairingError ? { error: pairingError.error, message: pairingError.message } : {}) };
+}
+function accountPairFailure(error) {
+  const messages = {
+    invalid_account_configuration: 'Paste the non-secret account configuration JSON copied from 知行. Do not paste a password or API key.',
+    account_profile_already_bound: 'This browser profile already belongs to another account. Open the dedicated profile from 知行.',
+    app_not_found: 'The selected app port is unavailable. Open 知行 and check the configuration.',
+    incompatible_extension: 'App and extension protocols differ. Update or reload the companion.',
+    pairing_pending_or_invalid: 'Confirm this request in 知行 first. If it was replaced, wait for the old request to expire before requesting again.',
+    pairing_expired: 'Pairing expired. Request pairing again; the configuration is retained.',
+    pairing_stale: 'A newer pairing or Disconnect replaced this operation.',
+    account_recheck_required: 'Reconnect this saved account in 知行, then check the connection again here.',
+    pairing_failed: 'Pairing could not be confirmed. Configuration is retained; check the app and retry.'
+  };
+  return { ok: false, error, message: messages[error] || messages.pairing_failed };
+}
+async function accountPairEndpoint(configuration) {
+  if (configuration.port !== undefined) {
+    const found = await hello(configuration.port);
+    if (!found) return null;
+    return { port: configuration.port, compatible: found.compatible !== false && found.bridge === BRIDGE_PROTOCOL };
+  }
+  return discover(true);
+}
+async function requestAccountPair(configuration) {
+  await load();
+  const parsed = parseAccountConfig(configuration ?? accountConfig);
+  if (!parsed) return accountPairFailure('invalid_account_configuration');
+  if (accountId && accountId !== parsed.accountId) return accountPairFailure('account_profile_already_bound');
+  const intent = ++connectionEpoch;
+  accountPairPending = null; accountConfig = parsed; accountSetupRequired = true; disconnected = false;
+  closeWakeSocket(); clearRetryIfIdle();
+  await persist(); await persistAccountPair();
+  try {
+    const found = await accountPairEndpoint(parsed);
+    if (intent !== connectionEpoch) return accountPairFailure('pairing_stale');
+    if (!found) return accountPairFailure('app_not_found');
+    if (found.compatible === false) return accountPairFailure('incompatible_extension');
+    const response = await fetchBounded(`http://127.0.0.1:${found.port}/accounts/pair`, { method: 'POST', cache: 'no-store', redirect: 'error', headers: { 'content-type': 'application/json', ...versionHeaders() }, body: JSON.stringify({ action: 'request', ...parsed }) });
+    const data = await response.json().catch(() => ({}));
+    if (intent !== connectionEpoch) return accountPairFailure('pairing_stale');
+    if (!response.ok || typeof data.nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(data.nonce) || typeof data.requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(data.requestId) || !Number.isFinite(data.expiresAt) || data.expiresAt <= Date.now() || data.expiresAt > Date.now() + 180000) return accountPairFailure('pairing_pending_or_invalid');
+    port = found.port;
+    accountPairPending = { accountId: parsed.accountId, requestId: data.requestId, nonce: data.nonce, expiresAt: data.expiresAt, port: found.port };
+    pairingError = null; await persistAccountPair(); await persist();
+    return intent === connectionEpoch ? accountPairView() : accountPairFailure('pairing_stale');
+  } catch { return accountPairFailure('pairing_failed'); }
+}
+async function finishAccountPair(recheck = false) {
+  await load();
+  if (accountPairClaim) return accountPairClaim;
+  const pendingPair = accountPairPending ? { ...accountPairPending } : null;
+  if (!recheck && (!pendingPair || pendingPair.expiresAt <= Date.now())) return accountPairFailure('pairing_expired');
+  if (recheck && (!accountId || !token || !accountConfig)) return accountPairFailure('account_recheck_required');
+  const intent = ++connectionEpoch;
+  const work = (async () => {
+    try {
+      if (recheck) { accountIdentityPending = true; closeWakeSocket(); clearRetryIfIdle(); await persist(); }
+      const targetId = recheck ? accountId : pendingPair.accountId;
+      const targetPort = recheck ? (await accountPairEndpoint(accountConfig))?.port : pendingPair.port;
+      if (intent !== connectionEpoch || (!recheck && accountPairPending?.requestId !== pendingPair.requestId)) return accountPairFailure('pairing_stale');
+      if (!targetPort) return accountPairFailure('app_not_found');
+      const response = await fetchBounded(`http://127.0.0.1:${targetPort}/accounts/pair`, { method: 'POST', cache: 'no-store', redirect: 'error', headers: { 'content-type': 'application/json', ...versionHeaders(), ...(recheck ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(recheck ? { action: 'recheck', accountId: targetId } : { action: 'claim', accountId: targetId, nonce: pendingPair.nonce }) });
+      const data = await response.json().catch(() => ({}));
+      if (intent !== connectionEpoch || (!recheck && accountPairPending?.requestId !== pendingPair.requestId)) return accountPairFailure('pairing_stale');
+      if (!response.ok || data.accountId !== targetId || !Number.isSafeInteger(data.connectionVersion) || data.connectionVersion < 1 || (!recheck && (typeof data.bridgeToken !== 'string' || !/^[a-f0-9]{64}$/i.test(data.bridgeToken)))) return accountPairFailure(recheck ? 'account_recheck_required' : 'pairing_pending_or_invalid');
+      accountId = targetId; accountVersion = data.connectionVersion; port = targetPort;
+      if (!recheck) token = data.bridgeToken;
+      accountSetupRequired = false; disconnected = false; accountIdentityPending = true; accountPairPending = null; pairingError = null;
+      // Old observations/receipts remain intact and blocked; a fresh epoch never retags them.
+      await persist(); await persistAccountPair();
+      return intent === connectionEpoch ? accountPairView() : accountPairFailure('pairing_stale');
+    } catch { return accountPairFailure('pairing_failed'); }
+  })();
+  accountPairClaim = work;
+  try { return await work; } finally { if (accountPairClaim === work) accountPairClaim = null; }
 }
 
 // -------------------------------------------------------------------- commands
@@ -2159,7 +2319,8 @@ function closeWakeSocket() {
   if (previous) previous.close();
 }
 function connectWakeSocket() {
-  if (!token || disconnected || !port || typeof WebSocket === 'undefined') return;
+  // /wake accepts only the legacy global token. Scoped accounts use authenticated HTTP.
+  if (accountId || accountSetupRequired || !token || disconnected || !port || typeof WebSocket === 'undefined') return;
   const url = `ws://127.0.0.1:${port}/wake`;
   if (wakeSocket?.url === url && wakeSocket.readyState <= 1) return;
   closeWakeSocket();
@@ -2208,32 +2369,17 @@ async function applyRequestedBrowserPreferences(request) {
   await call('/browser/preferences', { method: 'POST', body: JSON.stringify(receipt) });
 }
 
-/** Retire idle app-owned documents and redundant copies, preserving exact unsent drafts. */
-async function pruneManagedTabs(tabs, policy, protectedChats, closable) {
+/** Retire explicit operations only. Idle time or duplicate URLs do not authorize closure. */
+async function pruneManagedTabs(tabs, policy, protectedChats) {
   const retired = new Set((Array.isArray(policy.retiredConversations) ? policy.retiredConversations : []).map(cleanConversationId).filter(Boolean));
-  const managed = new Set((Array.isArray(policy.managedConversations) ? policy.managedConversations : []).map(cleanConversationId).filter(Boolean));
-  for (const id of closable) managed.add(id);
-  const owned = tab => managed.has(conversationForTab(tab));
-  // Keep the selected/recent copy. The oldest surplus goes first, independent of query order.
-  const ordered = [...tabs].sort((a, b) => Number(b.active === true) - Number(a.active === true) || (b.lastAccessed || 0) - (a.lastAccessed || 0) || a.id - b.id);
-  const keeper = new Map();
-  for (const tab of ordered) if (owned(tab) && !keeper.has(conversationForTab(tab))) keeper.set(conversationForTab(tab), tab.id);
   const activity = policy.conversationActivityAt || {};
-  // Evict by model work/turn completion, never by which browser tab was selected.
-  const candidates = ordered.filter(owned).sort((a, b) =>
-    Number(keeper.get(conversationForTab(b)) !== b.id) - Number(keeper.get(conversationForTab(a)) !== a.id) ||
+  const candidates = tabs.filter(tab => retired.has(conversationForTab(tab))).sort((a, b) =>
     (activity[conversationForTab(a)] || 0) - (activity[conversationForTab(b)] || 0) || a.id - b.id);
   let remaining = [...tabs];
   for (const tab of candidates) {
     const conversationId = conversationForTab(tab);
-    if (!Number.isInteger(tab.id) || tab.pinned) continue;
-    const duplicate = keeper.get(conversationId) !== tab.id && remaining.some(other => other.id !== tab.id && conversationForTab(other) === conversationId);
+    if (!Number.isInteger(tab.id) || tab.pinned || tab.active) continue;
     if (protectedChats.has(conversationId)) continue;
-    // App policy can release an idle page without retiring its durable worker/chat.
-    // Keep the selected page for reading; terminal/duplicate cleanup keeps its own rules.
-    if (!duplicate && !retired.has(conversationId) && !closable.has(conversationId)) continue;
-    const idlePage = !duplicate && !retired.has(conversationId);
-    if (idlePage && tab.active) continue;
     const source = { tab: tab.id, documentId: tabDocuments[String(tab.id)], navigationEpoch: tabEpochs[String(tab.id)] };
     if (!ownsDocument(source) || journalCountForConversation(conversationId) > 0) continue;
     const cancelledClaims = (Array.isArray(policy.cancelledDecisionClaims) ? policy.cancelledDecisionClaims : [])
@@ -2243,13 +2389,13 @@ async function pruneManagedTabs(tabs, policy, protectedChats, closable) {
     if (cancelledClaims.length && !cancelledDecisions.length) continue;
     try {
       const current = await chrome.tabs.get(tab.id);
-      if (current.pinned || (idlePage && current.active) || conversationFromUrl(current.url) !== conversationId || current.pendingUrl) continue;
+      if (current.pinned || current.active || conversationFromUrl(current.url) !== conversationId || current.pendingUrl) continue;
 
       const proof = await tabReply(tab.id, { type: 'clf-tab-close-check', conversationId,
         ...(cancelledDecisions.length ? { cancelledDecisions } : {}) }, { documentId: source.documentId });
       if (proof?.safe !== true || proof.conversationId !== conversationId || proof.navigationEpoch !== source.navigationEpoch || !ownsDocument(source)) continue;
       const latest = await chrome.tabs.get(tab.id);
-      if (latest.pinned || (idlePage && latest.active) || latest.pendingUrl || conversationFromUrl(latest.url) !== conversationId || !ownsDocument(source) || journalCountForConversation(conversationId) > 0) continue;
+      if (latest.pinned || latest.active || latest.pendingUrl || conversationFromUrl(latest.url) !== conversationId || !ownsDocument(source) || journalCountForConversation(conversationId) > 0) continue;
 
       await chrome.tabs.remove(tab.id);
       remaining = remaining.filter(other => other.id !== tab.id);
@@ -2271,7 +2417,7 @@ function maintain(woken = false) {
 async function maintainOnce() {
   // The app decides whether there is recovery work; a worker holding no tabs is not a worker
   // with nothing to do, it is the one that has to open the chat the app is owed.
-  if (token === null) return;
+  if (token === null || accountSetupRequired || accountIdentityPending) return;
   let observedTabs = [];
   try { observedTabs = await chrome.tabs.query({ url: CHATGPT_TAB_URLS }); } catch { /* Status/recovery still runs; no unobserved tab is pruned. */ }
   const openConversations = [...new Set(observedTabs.map(conversationForTab).filter(Boolean))];
@@ -2338,7 +2484,7 @@ async function maintainOnce() {
   } catch {
     return;
   }
-  tabs = await pruneManagedTabs(tabs, reply.data, nonDiscardable, closable);
+  tabs = await pruneManagedTabs(tabs, reply.data, nonDiscardable);
   if (protectionWork) {
     let changed = false;
     for (const tab of tabs) {
@@ -2627,6 +2773,10 @@ function serializeTab(tab, operation) {
 }
 
 const HANDLERS = {
+  async account_pair_status() { await load(); return accountPairView(); },
+  async account_pair_request(message) { return requestAccountPair(message.configuration); },
+  async account_pair_claim() { return finishAccountPair(); },
+  async account_pair_recheck() { return finishAccountPair(true); },
   async plugin_refresh(message, _sender, source) {
     if (!ownsDocument(source) || !/^[a-f0-9-]{36}$/i.test(String(message.id || ''))) return { ok: false };
     const tab = await chrome.tabs.get(source.tab);
@@ -2713,8 +2863,8 @@ const HANDLERS = {
     // the first time it is opened, rather than a truthful but useless "not paired".
     // Not after a deliberate disconnect: opening the popup to check is not a request to
     // undo the thing the popup was opened to check.
-    if (found && !token && !disconnected) await provision();
-    if (found && token) {
+    if (found && !token && !disconnected && !accountSetupRequired) await provision();
+    if (found && token && !accountSetupRequired && !accountIdentityPending) {
       void drainCommandAcks()
         .then(() => drain())
         .then(() => drainCloses())
@@ -2723,7 +2873,9 @@ const HANDLERS = {
     return {
       connected: found !== null,
       port: found ? found.port : null,
-      paired: token !== null,
+      paired: token !== null && !accountSetupRequired,
+      needsSetup: accountSetupRequired || accountIdentityPending,
+      identityPending: accountIdentityPending,
       disconnected,
       pending: journal.length,
       pendingCommandAcks: commandAckOutbox.length,
@@ -2756,11 +2908,13 @@ const HANDLERS = {
     // Invalidate any `/pair` already on the wire before changing the visible/persisted state.
     connectionEpoch++;
     token = null;
+    accountPairPending = null;
     // Remembered, not just cleared. Otherwise the next request — two seconds away in any
     // open tab — provisions a new token and the browser is connected again.
     disconnected = true;
-    pairingError = null;
+    pairingError = accountSetupRequired ? { error: 'account_pairing_required', message: ACCOUNT_SETUP_MESSAGE } : null;
     await persist();
+    await persistAccountPair();
     return { ok: true };
   },
   /** Ask every eligible ChatGPT tab to rebuild its Chat On Steroids activity stream now. */
@@ -3284,6 +3438,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: false, error: 'unknown_message' });
     return false;
   }
+  if ((message.type.startsWith('account_pair_') || message.type === 'pair' || message.type === 'unpair') && (sender?.tab || sender?.id !== chrome.runtime.id ||
+      typeof chrome.runtime.getURL !== 'function' || sender?.url !== chrome.runtime.getURL('popup.html'))) {
+    sendResponse({ ok: false, error: 'popup_only' });
+    return false;
+  }
   const owned = new Set([
     'stop_redeem',
     'stop_ack',
@@ -3473,7 +3632,7 @@ chrome.tabs.onUpdated.addListener((id, changeInfo) => {
  * receive both its static manifest injection and this recovery injection.
  */
 const CHATGPT_TAB_URLS = ['https://chatgpt.com/*', 'https://chat.openai.com/*'];
-const PAGE_RECORDER_VERSION = 11;
+const PAGE_RECORDER_VERSION = 12;
 
 let deferredRecoveryWork = null;
 

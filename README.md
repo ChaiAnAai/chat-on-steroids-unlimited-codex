@@ -1,3 +1,11 @@
+# 知行 · Chat On Steroids 2.1
+
+本分支为知行 **2.1.0 源码里程碑版本**，应用与扩展使用桥接协议 **14**。当前升级包含已实现功能和仍待真实服务验收的能力，详见 [2.1.0 版本说明](docs/release-notes/v2.1.0.md)。本次源码推送不代表已发布并验收通过的安装包。
+
+下方保留上游项目介绍；其中上游下载、演示及高级功能说明不代表本分支的交付或验收状态。升级后的默认策略为同项目主对话内规划与续行。
+
+---
+
 <p align="center">
   <a href="https://github.com/totec448-spec/chat-on-steroids/releases/latest/download/Chat-On-Steroids-Setup-x64.exe"><img src="https://img.shields.io/badge/Download-Windows_x64-58a6ff?style=for-the-badge" alt="Download for Windows x64" /></a>
   <a href="https://github.com/totec448-spec/chat-on-steroids/releases/latest/download/Chat-On-Steroids-macOS-arm64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-58a6ff?style=for-the-badge" alt="Download for macOS Apple Silicon" /></a>

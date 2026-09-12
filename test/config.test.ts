@@ -25,6 +25,19 @@ afterAll(async () => {
 });
 
 describe('settings migration', () => {
+  it('backfills appearance while retaining the legacy theme and unrelated preferences', async () => {
+    for (const theme of ['light', 'dark'] as const) {
+      const legacy = defaultConfig(); delete legacy.ui.appearance;
+      legacy.ui.theme = theme; legacy.ui.autoConnect = true;
+      await fs.writeFile(path.join(dir, 'config.json'), JSON.stringify(legacy), 'utf8');
+      expect((await loadConfig()).ui).toMatchObject({ theme, autoConnect: true,
+        appearance: { accent: 'neutral', interfaceSize: 14, codeSize: 13, density: 'comfortable' } });
+    }
+    const config = defaultConfig(); config.ui.theme = 'system';
+    config.ui.appearance = { accent: 'amber', interfaceSize: 16, codeSize: 16, density: 'compact' };
+    await saveConfig(config);
+    expect((await loadConfig()).ui).toMatchObject(config.ui);
+  });
   it('defaults background chats on for fresh and omitted settings while preserving saved choices', async () => {
     expect(defaultConfig().ui.backgroundChats).toBe(true);
     expect((await loadConfig()).ui.backgroundChats).toBe(true);
@@ -363,7 +376,7 @@ describe('shipped defaults', () => {
     for (const [capability, enabled] of Object.entries(loaded.capabilities) as Array<[Capability, boolean]>) {
       expect(enabled, capability).toBe(expectedFreshCapability(capability, process.platform));
     }
-    expect(loaded.multiAgent.enabled).toBe(true);
+    expect(loaded.multiAgent.enabled).toBe(false);
     expect(loaded.multiAgent.allowUnattributedCalls).toBe(true);
     expect(loaded.multiAgent.recoverAgentTabs).toBe(false);
   });
@@ -376,7 +389,7 @@ describe('shipped defaults', () => {
       for (const [capability, enabled] of Object.entries(config.capabilities) as Array<[Capability, boolean]>) {
         expect(enabled, `${platform}:${capability}`).toBe(expectedFreshCapability(capability, platform));
       }
-      expect(config.multiAgent.enabled).toBe(true);
+      expect(config.multiAgent.enabled).toBe(false);
       expect(config.multiAgent.maxWorkers).toBe(2);
       expect(config.multiAgent.allowUnattributedCalls).toBe(true);
       expect(config.multiAgent.recoverAgentTabs).toBe(false);
@@ -502,6 +515,9 @@ describe('the goal loop settings', () => {
     expect((await loadConfig()).goal).toEqual({
       backend: 'chatgpt',
       loopBackend: 'chatgpt',
+      executionPolicy: 'same-session',
+      reservePercent: 10,
+      warningPercent: 20,
       includeToolCalls: false,
       impulseMinutes: 0,
       helperModel: 'gpt-5.6-sol',
@@ -649,6 +665,9 @@ describe('the goal loop settings', () => {
     expect((await loadConfig()).goal).toEqual({
       backend: 'chatgpt',
       loopBackend: 'chatgpt',
+      executionPolicy: 'same-session',
+      reservePercent: 10,
+      warningPercent: 20,
       includeToolCalls: false,
       impulseMinutes: 0,
       helperModel: 'gpt-5.6-sol',

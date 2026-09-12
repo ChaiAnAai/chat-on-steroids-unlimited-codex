@@ -42,7 +42,7 @@ vi.mock('electron', () => ({
 }));
 const { safeStorage } = await import('electron');
 
-const { defaultConfig, getConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
+const { defaultConfig: productDefaultConfig, getConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
 const { initSecretsPath, resetSecretsCacheForTests, setSecret } = await import('../src/main/secrets.js');
 const {
   bridgePort,
@@ -554,7 +554,7 @@ describe('provisioning', () => {
 });
 
 describe('active agent tab discard projection', () => {
-  it('reuses sleeping workers after two minutes and releases their pages after five without retiring them', async () => {
+  it('allows explicit reuse of sleeping workers but never closes their pages for idle time', async () => {
     const previous = getConfig();
     await saveConfig({ ...previous, multiAgent: { ...previous.multiAgent, maxWorkers: 3 }, ui: { ...previous.ui, tabsToKeepOpen: 1 } });
     try {
@@ -566,7 +566,7 @@ describe('active agent tab discard projection', () => {
       finishAgent({ conversationId: chats[1]! }, 'second sleeping');
       const status = (await request('POST', '/status', { body: { openConversations: chats } })).body;
       expect(status.idleReuseAfterMs).toBe(120000);
-      expect(status.idleCloseAfterMs).toBe(300000);
+      expect(status.idleCloseAfterMs).toBeNull();
       expect(status.reusableConversations).toEqual([]);
       expect(status.sleepingWorkerConversations).toBeUndefined();
       expect(status.managedConversations).toEqual(expect.arrayContaining(chats));
@@ -592,7 +592,8 @@ describe('active agent tab discard projection', () => {
         clock.mockReturnValue(now + 301_000);
         noteAgentAlive(chats[0], 'page');
         const expired = (await request('POST', '/status', { body: { openConversations: chats } })).body;
-        expect(expired.closableConversations).toEqual(chats.slice(0, 2));
+        expect(expired.closableConversations).toEqual([]);
+        expect(expired.idleCloseAfterMs).toBeNull();
         expect(expired.retiredConversations).toEqual([]);
         expect(agentInfoForOwnedConversation(chats[0]!)?.state).toBe('sleeping');
         workerConversationGone(chats[0]!);
@@ -814,6 +815,23 @@ describe('observations', () => {
 // ---------------------------------------------------------------- activity
 
 describe('activity feed', () => {
+  it('records and streams public summary revisions under one native activity identity', async () => {
+    await pair();
+    const chat = 'aeaeaeae-1111-4111-8111-111111111111';
+    const send = (detail?: string) => request('POST', '/events', { body: { conversationId: chat,
+      events: [{ kind: 'page_tool', time: Date.now(), messageId: 'thought-summary', text: 'Thinking', ...(detail ? { detail } : {}) }] } });
+    const original = 'Visible public summary. '.repeat(50);
+    const receipt = await send(original);
+    await send(original + 'Updated.');
+    await send(); // Collapsing the native summary must not erase already observed content.
+    const events = await readEvents(receipt.body.sessionId, { kinds: ['page_tool'] });
+    expect(events).toHaveLength(2);
+    expect(foldProgress(events)).toEqual([expect.objectContaining({ label: 'Thinking', detail: original + 'Updated.' })]);
+    const feed = await request('GET', `/activity?conversationId=${chat}&since=0`);
+    const stream = feed.body.stream.filter((row: any) => row.kind === 'page_tool');
+    expect(stream.at(-1)).toMatchObject({ messageId: 'thought-summary', detail: original + 'Updated.' });
+    expect(new Set(stream.map((row: any) => row.seq)).size).toBe(1);
+  });
   it('reopens a durable still-open chat after recorder memory is lost', async () => {
     await pair();
     const conversationId = '98989898-7777-6666-5555-444444444444';
@@ -1989,7 +2007,7 @@ describe('delivering a bootstrap', () => {
       expect(early.closableConversations).toEqual([]);
       clock.mockReturnValue(now + 301_000);
       const expired = (await request('POST', '/status', { body: { openConversations: [settled, personal, working] } })).body;
-      expect(expired.closableConversations).toEqual([settled]);
+      expect(expired.closableConversations).toEqual([]);
       expect(expired.retiredConversations).toEqual([]);
     } finally { clock.mockRestore(); }
   });
@@ -4562,7 +4580,8 @@ describe('targeted open', () => {
     const { sessionId, token } = await compactedSession('77777777-8888-9999-aaaa-bbbbbbbbbbbb', 'carry on');
     queueResume(sessionId, token);
 
-    expect(pendingCommands()).toEqual([]);
+    // Delivery first resolves durable connection restrictions, then reports the missing opener.
+    await vi.waitFor(() => expect(pendingCommands()).toEqual([]));
     expect(continuationByToken(token)?.state).toBe('aborted');
   });
 
@@ -4819,7 +4838,9 @@ describe('a worker chat that never opens', () => {
       // worker-1's open failed and ended its command, so delivery advanced to worker-2 in the
       // same beat. That is the beat this guard exists for: worker-2 waits for the browser
       // worker-1 asked for instead of asking the operating system for a second one.
-      expect(attempts).toHaveLength(1);
+      // Wait for the asynchronous restriction check and lease write, not an assumed 10 ms.
+      // The bounded wait is much shorter than the 60-second launch grace period.
+      await vi.waitFor(() => expect(attempts).toHaveLength(1));
       expect(pendingCommands().some((command) => command.what === `worker:${currentRunId()}:worker-2`)).toBe(true);
 
       // Still nothing has reported, so the launch is now one this app has stopped believing in
@@ -4827,7 +4848,7 @@ describe('a worker chat that never opens', () => {
       await vi.advanceTimersByTimeAsync(60_001);
       await flushDurable();
       await vi.advanceTimersByTimeAsync(10);
-      expect(attempts).toHaveLength(2);
+      await vi.waitFor(() => expect(attempts).toHaveLength(2));
     } finally {
       vi.useRealTimers();
     }
@@ -9338,3 +9359,6 @@ it('retires an already armed ordinary Goal repair when its conversation is now A
     expect(((await request('GET', '/status')).body.repairs ?? []).filter((r: any) => r.conversationId === chat)).toEqual([]);
   } finally { resetGoalStateForTests(); await setSecret('openRouterApiKey', ''); await saveConfig(previous); vi.useRealTimers(); }
 });
+
+// Retained advanced helper-policy regression fixture. New default is covered by workflow.test.ts.
+function defaultConfig(...args: Parameters<typeof productDefaultConfig>) { const config = productDefaultConfig(...args); config.goal.executionPolicy = 'legacy-helper'; config.multiAgent.enabled = true; config.multiAgent.allowUnattributedCalls = true; return config; }

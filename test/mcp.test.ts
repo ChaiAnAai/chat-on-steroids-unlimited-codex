@@ -1458,7 +1458,7 @@ describe('capability gating', () => {
     ctx.sessionTools = true;
     const advertised = toolList(await core('tools/list')).find((tool) => tool.name === 'session');
     expect(advertised?.inputSchema).toMatchObject({
-      properties: { action: { enum: ['search', 'read'] } },
+      properties: { action: { enum: ['search', 'read', 'checkpoint'] } },
       required: ['action']
     });
     expect(advertised?.inputSchema?.properties).not.toHaveProperty('limit');
@@ -1490,7 +1490,7 @@ describe('capability gating', () => {
     // representative for a host with every declared capability.
     const config = defaultConfig('win32');
     expect(config.readOnly).toBe(false);
-    expect(config.multiAgent.enabled).toBe(true);
+    expect(config.multiAgent.enabled).toBe(false);
     expect(Object.values(effectiveCapabilities(config, 'win32')).every(Boolean)).toBe(true);
   });
 
@@ -1800,7 +1800,7 @@ describe('tool annotations', () => {
     expect(read?.annotations?.destructiveHint).toBe(false);
     // Both session actions are inspection only. Marking this as a write tool makes clients
     // apply confirmation/write semantics to searching and reading local recordings.
-    expect(session?.annotations?.readOnlyHint).toBe(true);
+    expect(session?.annotations?.readOnlyHint).toBe(false);
     expect(session?.annotations?.destructiveHint).toBe(false);
   });
 });

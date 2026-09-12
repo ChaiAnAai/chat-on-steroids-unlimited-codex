@@ -23,6 +23,8 @@ import { PluginOAuth, PluginNeedsAuth } from '../src/main/plugins/oauth.js';
 import * as pluginInstaller from '../src/main/plugins/installer.js';
 import * as exposureModule from '../src/main/plugins/exposure.js';
 import * as durableModule from '../src/main/durable.js';
+import * as processModule from '../src/main/exec.js';
+import { pluginRegistry } from '../src/main/plugins/registry.js';
 
 const fixture = `const readline=require('node:readline');
 const tools=[{name:'Echo.Mixed',description:'Echo fixture',inputSchema:{type:'object',properties:{value:{type:'string'}},required:['value'],additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false},outputSchema:{type:'object',properties:{value:{type:'string'}},required:['value']}}];
@@ -36,6 +38,37 @@ beforeEach(async () => {
   entry = path.join(dir, 'server.cjs');
   await fs.writeFile(entry, fixture);
   secrets.clear();
+});
+it('does not start an installer when a registry lookup returns after shutdown', async () => {
+  let release!:(value:Awaited<ReturnType<typeof pluginRegistry.resolve>>)=>void;
+  const resolve=vi.spyOn(pluginRegistry,'resolve').mockImplementation(()=>new Promise(r=>{release=r;}));
+  const install=vi.spyOn(pluginInstaller,'installSource');
+  const pending=manager.install({registry:{name:'org.example/test',version:'1.0.0',optionId:'remote:0'}});
+  const rejected=expect(pending).rejects.toThrow('cancelled by shutdown');
+  await vi.waitFor(()=>expect(resolve).toHaveBeenCalledOnce());const closing=manager.close();
+  release({entry:{} as never,option:{} as never,source:{kind:'remote',url:'https://example.com/mcp'},config:{},credentials:{}});
+  await Promise.all([rejected,closing]);expect(install).not.toHaveBeenCalled();
+});
+it('keeps registry identity and generated fields across restart/update, stores prefixed secrets and rejects duplicate installation', async () => {
+  const source = {kind:'npm' as const,package:'@example/registry-fixture',version:'1.0.0'};
+  const fields = [{key:'TEST_SECRET',label:'API key',secret:true,required:true,valuePrefix:'Bearer '}];
+  vi.spyOn(pluginRegistry,'resolve').mockResolvedValue({
+    entry:{name:'org.example/test',title:'Registry fixture',description:'Search public documentation',repository:'https://github.com/example/docs',version:'1.0.0',homepage:'https://example.com/docs',options:[],unsupported:[]},
+    option:{id:'package:0',source,fields,defaults:{}},source,config:{},credentials:{TEST_SECRET:'private-value'},
+  });
+  vi.spyOn(pluginInstaller,'installSource').mockImplementation(async (_source,directory)=>{
+    await fs.mkdir(directory,{recursive:true});return {command:process.execPath,args:[entry],version:'1.0.0',license:'MIT'};
+  });
+  const request={registry:{name:'org.example/test',version:'1.0.0',optionId:'package:0'}};
+  const row=(await manager.install(request)).plugins[0]!;
+  expect(row.status).toBe('ready');expect(row.fields).toEqual(fields);expect(row.registry).toEqual(request.registry);
+  expect(secrets.get(`plugin:${row.id}:TEST_SECRET`)).toBe('Bearer private-value');
+  expect(JSON.stringify(manager.snapshot())).not.toContain('private-value');
+  await expect(manager.install(request)).rejects.toThrow('already installed');
+  await manager.close(); manager=new PluginManager();await manager.initialize(dir);
+  await vi.waitFor(()=>expect(manager.snapshot().plugins[0]!.status).toBe('ready'));
+  await manager.update(row.id);expect(manager.snapshot().plugins[0]!.fields).toEqual(fields);expect(manager.snapshot().plugins[0]!.registry).toEqual(request.registry);
+  expect(manager.snapshot().plugins[0]!.registryInfo).toEqual({description:'Search public documentation',repository:'https://github.com/example/docs'});
 });
 afterEach(async () => {
   vi.useRealTimers();
@@ -562,8 +595,22 @@ describe('enabled plugin process ownership', () => {
     });
     const replacing = manager.update(h.row.id);
     await vi.waitFor(() => expect(installing).toHaveBeenCalledTimes(1));
+    const terminate = processModule.terminateProcessTree;
+    let retirement: Promise<void> | undefined;
+    vi.spyOn(processModule, 'terminateProcessTree').mockImplementation((...args) => {
+      const pending = terminate(...args);
+      if (args[0] === active.pid) retirement = pending;
+      return pending;
+    });
     const revoke = action === 'disable' ? manager.setEnabled(h.row.id, false) : manager.uninstall(h.row.id);
-    try { await vi.waitFor(() => expect(alive(active.pid)).toBe(false), { timeout: 1000 }); }
+    try {
+      expect(retirement).toBeDefined();
+      expect(manager.tools()).toEqual([]);
+      // Download stays gated. Wait for the real terminator (including its 1-second
+      // Windows taskkill fallback) before checking process exit, rather than racing it.
+      await retirement;
+      await vi.waitFor(() => expect(alive(active.pid)).toBe(false), { timeout: 1000 });
+    }
     finally { release(); await replacing; await revoke; }
     expect(await h.pids()).toHaveLength(1);
     expect(manager.tools()).toEqual([]);

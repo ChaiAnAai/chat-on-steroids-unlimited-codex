@@ -1081,6 +1081,7 @@ export async function getWindowState(opts: {
   screenshot: Screenshot | null;
   elements: UiElementInfo[];
   uiUnavailable: { code: string; message: string } | null;
+  uiTextUnavailable?: { code: string; message: string } | null;
   uiTruncated?: boolean;
   accessibility?: AccessibilityContext;
   related?: Array<{ window: WindowInfo; screenshot: Screenshot | null; error?: string }>;
@@ -1118,6 +1119,11 @@ export async function getWindowState(opts: {
               message: String((unavailableValue as Record<string, unknown>)['message'] ?? 'UI controls are unavailable')
             }
           : null;
+      const textUnavailableValue = reply['uiTextUnavailable'];
+      const uiTextUnavailable = textUnavailableValue && typeof textUnavailableValue === 'object'
+        ? { code: String((textUnavailableValue as Record<string, unknown>)['code'] ?? 'UI_TEXT_UNAVAILABLE'),
+            message: String((textUnavailableValue as Record<string, unknown>)['message'] ?? 'UI text is unavailable') }
+        : null;
       const found = includeUi && uiUnavailable === null
         ? await findUiLocked({ window: window.id, maxResults: opts.maxElements ?? 60 }, frame, reply)
         : { window: window.id, snapshotId: null, elements: [] as UiElementInfo[], accessibility: undefined };
@@ -1144,6 +1150,7 @@ export async function getWindowState(opts: {
         screenshot: shot,
         elements: found.elements,
         uiUnavailable,
+        uiTextUnavailable,
         ...(includeUi && uiUnavailable === null && typeof reply['truncated'] === 'boolean' ? { uiTruncated: reply['truncated'] } : {}),
         ...(found.accessibility ? { accessibility: found.accessibility } : {}),
         ...(related.length > 0 ? { related } : {})

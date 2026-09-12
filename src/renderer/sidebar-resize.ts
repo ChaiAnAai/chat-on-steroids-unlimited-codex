@@ -1,4 +1,6 @@
-/** A renderer-only layout preference, independent of chat selection and app config. */
+import { t, ui } from './i18n.js';
+
+/** Preferred desktop width persists; narrow-window navigation is a temporary drawer. */
 export function initSidebarResize(): void {
   const app = document.querySelector<HTMLElement>('.app')!;
   const sidebar = document.getElementById('sidebar')!;
@@ -10,6 +12,13 @@ export function initSidebarResize(): void {
   const maximum = () => Math.max(minimum, Math.min(480, window.innerWidth / 2));
   let preferred: number | null = null;
   let collapsed = false;
+  let compact = window.innerWidth < 900;
+  let drawerOpen = false;
+  const backdrop = document.createElement('button');
+  backdrop.className = 'sidebar-backdrop'; backdrop.type = 'button'; backdrop.tabIndex = -1;
+  ui(backdrop, 'aria-label', () => t('Close'));
+  app.append(backdrop);
+  const canvas = [...app.querySelectorAll<HTMLElement>(':scope > main, :scope > header, :scope > .notices')];
   let drag: { id: number; x: number; width: number } | null = null;
   try {
     const saved = Number(localStorage.getItem(key));
@@ -17,9 +26,19 @@ export function initSidebarResize(): void {
     collapsed = localStorage.getItem(`${key}.collapsed`) === 'true';
   } catch { /* Layout remains usable when storage is unavailable. */ }
   function render(): void {
-    app.classList.toggle('is-sidebar-collapsed', collapsed);
-    sidebar.inert = collapsed;
-    toggle.setAttribute('aria-expanded', String(!collapsed));
+    const narrow = window.innerWidth < 900;
+    if (narrow !== compact) { compact = narrow; drawerOpen = false; }
+    const visible = compact ? drawerOpen : !collapsed;
+    if (!visible && sidebar.contains(document.activeElement)) toggle.focus();
+    app.dataset.sidebarMode = compact ? 'drawer' : 'docked';
+    app.classList.toggle('is-sidebar-collapsed', !visible);
+    sidebar.inert = !visible;
+    backdrop.hidden = !compact || !drawerOpen;
+    for (const node of canvas) node.inert = compact && drawerOpen;
+    if (compact && drawerOpen) { sidebar.setAttribute('role', 'dialog'); sidebar.setAttribute('aria-modal', 'true'); }
+    else { sidebar.removeAttribute('role'); sidebar.removeAttribute('aria-modal'); }
+    ui(sidebar, 'aria-label', () => t('Conversations'));
+    toggle.setAttribute('aria-expanded', String(visible));
     if (preferred === null) app.style.removeProperty('--sidebar-width');
     else app.style.setProperty('--sidebar-width', `${Math.min(maximum(), preferred)}px`);
     handle.setAttribute('aria-valuemin', String(minimum));
@@ -37,7 +56,7 @@ export function initSidebarResize(): void {
     render();
   }
   handle.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || drag) return;
+    if (compact || event.button !== 0 || drag) return;
     handle.setPointerCapture(event.pointerId);
     drag = { id: event.pointerId, x: event.clientX, width: sidebar.getBoundingClientRect().width };
     app.classList.add('is-resizing-sidebar');
@@ -68,6 +87,11 @@ export function initSidebarResize(): void {
     save();
   });
   function toggleSidebar(): void {
+    if (compact) {
+      drawerOpen = !drawerOpen; render();
+      if (drawerOpen) sidebar.querySelector<HTMLButtonElement>('button:not([hidden])')?.focus();
+      return;
+    }
     collapsed = !collapsed;
     if (collapsed && sidebar.contains(document.activeElement)) toggle.focus();
     render();
@@ -76,6 +100,16 @@ export function initSidebarResize(): void {
   toggle.addEventListener('click', toggleSidebar);
   document.getElementById('sidebarMenuToggle')!.addEventListener('click', toggleSidebar);
   document.addEventListener('keydown', (event) => {
+    if (compact && drawerOpen && event.key === 'Escape') {
+      event.preventDefault(); drawerOpen = false; render(); toggle.focus(); return;
+    }
+    if (compact && drawerOpen && event.key === 'Tab') {
+      const items = [...sidebar.querySelectorAll<HTMLElement>('button, a[href], summary, input, select, [tabindex="0"]')]
+        .filter(node => !node.closest('[hidden]') && !node.hasAttribute('disabled') && node !== handle);
+      const first = items[0], last = items.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
     if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'b') {
       event.preventDefault();
       if (!event.repeat) toggleSidebar();
@@ -84,6 +118,13 @@ export function initSidebarResize(): void {
   });
   document.addEventListener('click', (event) => {
     if (!menu.contains(event.target as Node) || (event.target as Element).closest('button')) menu.open = false;
+  });
+  backdrop.onclick = () => { drawerOpen = false; render(); toggle.focus(); };
+  sidebar.addEventListener('click', event => {
+    if (!compact || !drawerOpen || !(event.target instanceof window.Element)) return;
+    if (!event.target.closest('#workspaceSettings, #workspacePlugins, .workspace-profile, #newChat, .sess')) return;
+    // Let the action open its destination first; never steal focus from an account dialog.
+    queueMicrotask(() => { drawerOpen = false; render(); });
   });
   window.addEventListener('resize', render);
   render();

@@ -1,4 +1,6 @@
 import { REASONING_EFFORTS } from '../../shared/session.js';
+import { acceptWorkflowInput, workflowInputAllowed } from './workflow.js';
+import { classifyFailure, sameSessionPolicy } from '../../shared/workflow.js';
 /** User-authored input has one durable owner across browser and MCP delivery.
  * A claimed browser send is never automatically retried: losing the ACK is ambiguous.
  * Tool delivery repeats under a stable message id until a later request proves receipt.
@@ -23,8 +25,12 @@ import { finishInstruction } from '../../shared/finish.js';
 import { attachmentSchema, validateInputAttachments } from './input-attachments.js';
 import { MAX_CHATGPT_MESSAGE_CHARS } from '../../shared/user-prompt.js';
 import type { PromptLimits } from './prompt.js';
+import { currentAccountTransport } from '../account-context.js';
+import { inputAccount, accountInputAllowed, accountProjectAvailable } from '../account-ownership.js';
 
 export const inputArgs = z.object({
+  intent: z.enum(['plan', 'execute']).optional(),
+  workflowRevision: z.number().int().nonnegative().optional(),
   projectId: z.string().uuid().nullable().optional(),
   automation: z.enum(['off', 'goal', 'loop']).optional(),
   objective: z.string().trim().max(16000).optional(),
@@ -42,6 +48,9 @@ export const inputArgs = z.object({
 });
 export type InputArgs = z.infer<typeof inputArgs>;
 const entrySchema = inputArgs.extend({
+  accountId: z.string().uuid().optional(),
+  connectionVersion: z.number().int().nonnegative().optional(),
+  retryCount: z.number().int().min(0).max(2).optional(),
   /** Exact tool-free turn this explicit browser correction may interrupt. */
   directTurn: z.object({ id: z.string().min(1).max(256), startedAt: z.number() }).optional(),
   finishOwner: z.object({ turnId: z.string().min(1).max(256), periodic: z.boolean(), userRequested: z.boolean().optional() }).optional(),
@@ -80,6 +89,7 @@ export interface ToolInputBatch {
 }
 export interface InputActivity { possible: boolean; exact: boolean; model?: 'pro' | 'other' | 'unknown' }
 type InputDeliveryHooks = {
+  canCreateChat?: () => boolean;
   activity?: (session: SessionSummary) => InputActivity;
   wakeDecision?: (entry: Readonly<InputEntry>, signal: AbortSignal) => Promise<void>;
   bindHelper?: (conversationId: string, sourceSessionId: string | null) => Promise<void>;
@@ -117,6 +127,9 @@ export async function sessionInputPolicy(sessionId: string, observedActivity?: I
     settled: terminal && (session.lastToolCallAt ?? 0) <= end.time };
 }
 async function browserInputAllowed(entry: InputEntry): Promise<boolean> {
+  if (!await accountInputAllowed(entry)) return false;
+  if (!await workflowInputAllowed(entry)) return false;
+  if (getConfig().goal.executionPolicy !== 'legacy-helper' && (entry.purpose === 'decision' || entry.finishOwner)) return false;
   if (entry.mode === 'finish' && entry.sessionId && entry.afterTurn !== true) {
     const session = await getSession(entry.sessionId);
     const selection = session?.selectedModel;
@@ -302,9 +315,11 @@ function append(current: InputEntry[], entry: InputEntry, stackDirect = false): 
     const positioned = current.filter(row => row.sessionId === entry.sessionId && queuedFollowup(row) && !terminal(row) && row.queueOrder !== undefined);
     if (positioned.length) entry = { ...entry, queueOrder: Math.max(...positioned.map(row => row.queueOrder!)) + 1 };
   }
-  // Only ordinary browser sends occupy the global composer slot. Durable tool
-  // intent can queue independently; actual handout still fences browser claims.
-  if (!stackDirect && entry.purpose !== 'decision' && !queuedFollowup(entry) && current.some(row => (row.transportIntent !== 'tool' || row.sessionId === entry.sessionId) && (row.sessionId === entry.sessionId || (!row.finishOwner && !entry.finishOwner)) && row.purpose !== 'decision' &&
+  // Owned composers reserve only their exact conversation (or new project's first
+  // message). The existing handout gate serializes projects within each account.
+  const sameComposer = (row: InputEntry) => !row.accountId && !entry.accountId ||
+    row.accountId === entry.accountId && (entry.sessionId ? row.sessionId === entry.sessionId : !row.sessionId && row.projectId === entry.projectId);
+  if (!stackDirect && entry.purpose !== 'decision' && !queuedFollowup(entry) && current.some(row => sameComposer(row) && (row.transportIntent !== 'tool' || row.sessionId === entry.sessionId) && (row.sessionId === entry.sessionId || (!row.finishOwner && !entry.finishOwner)) && row.purpose !== 'decision' &&
       !(!entry.finishOwner && row.finishOwner && row.state === 'tool') &&
       (!queuedFollowup(row) || row.state === 'browser') && ['queued', 'browser', 'tool'].includes(row.state))) {
     throw new Error('One message is already awaiting delivery. Cancel it before sending another.');
@@ -355,7 +370,10 @@ export function enqueueInput(raw: InputArgs, finishOwner?: InputEntry['finishOwn
       if (JSON.stringify(inputArgs.parse({ ...prior, mode: prior.requestedMode ?? prior.mode })) !== JSON.stringify(input)) throw new Error('Message id already belongs to different input');
       return { ...prior };
     }
+    const accountId = await inputAccount(input);
     const policy = input.sessionId ? await sessionInputPolicy(input.sessionId) : null;
+    if (input.workflowRevision !== undefined && !await workflowInputAllowed(input)) throw new Error('Automatic continuation is paused');
+    if (input.sessionId && input.intent && (await getSession(input.sessionId))?.activeTurnId) throw new Error('Wait for the current turn to finish before changing planning permissions');
     const requestedMode = input.mode;
     if (input.attachments?.length) {
       await validateInputAttachments(input.attachments);
@@ -373,6 +391,7 @@ export function enqueueInput(raw: InputArgs, finishOwner?: InputEntry['finishOwn
       ? policy?.canInject ? 'tool' as const : !policy || policy.browserAllowed || policy.directTurn ? 'browser' as const : undefined : undefined;
     const directTurn = input.mode === 'auto' && !finishOwner && input.dueAt <= Date.now() ? policy?.directTurn : null;
     const entry: InputEntry = { ...input, ...(directTurn ? { directTurn } : {}), ...(transportIntent ? { transportIntent } : {}), ...(requestedMode !== input.mode ? { requestedMode } : {}), ...(finishOwner ? { finishOwner } : {}), state: 'queued', owner: null, createdAt: Date.now(), conversationId: null };
+    if (accountId) entry.accountId = accountId;
     if (input.projectId) {
       await projectWorkspace(input.projectId);
       if (input.sessionId) {
@@ -385,13 +404,20 @@ export function enqueueInput(raw: InputArgs, finishOwner?: InputEntry['finishOwn
     if (finishOwner && !(await finishInputCurrent(entry))) throw new Error('The automatic follow-up no longer belongs to an active turn');
     // User input supersedes only automatic work that has never been handed out.
     // Offered tool receipts retain their identity until a later request proves receipt.
-    const prioritized = !finishOwner ? current.map(row => row.sessionId === entry.sessionId && row.finishOwner && row.state === 'queued'
+    const prioritized = !finishOwner && input.workflowRevision === undefined ? current.map(row => row.sessionId === entry.sessionId && (row.finishOwner || row.workflowRevision !== undefined) && row.state === 'queued'
       ? { ...row, state: 'cancelled' as const, error: 'Replaced by your new instruction before delivery.' } : row) : current;
     let next = append(prioritized, entry, input.mode === 'auto' && !finishOwner && policy?.canInject === true);
     // A finish plan belongs to an existing session now. Publish every editable
     // checkpoint atomically; no composer text or first-send receipt owns its life.
     if (entry.mode === 'finish') next = materializeStages(next, entry);
     await commit(next);
+    // The serialized outbox cannot hand out a row until its validated intent is durable.
+    // If intent persistence fails, fence this row instead of delivering with old permissions.
+    try { if (input.sessionId) await acceptWorkflowInput(input.sessionId, input); }
+    catch (error) {
+      await commit(next.map(row => row.id === entry.id ? { ...row, state: 'failed' as const, error: 'Planning permissions could not be saved. Retry your instruction.' } : row));
+      throw error;
+    }
     return { ...next.find(row => row.id === entry.id)! };
   });
 }
@@ -498,6 +524,7 @@ export function authorizeBrowserInput(id: string, owner: string, conversationId:
     const current = await load();
     const row = current.find(row => row.id === id && row.owner === owner && row.state === 'browser' && row.conversationId === conversationId);
     if (!row || row.sendAuthorizedAt !== undefined) return false;
+    if (!await accountProjectAvailable(row, current)) return false;
     if (!(await browserInputAllowed(row)) || await target(row) !== conversationId) return false;
     await commit(current.map(entry => entry === row ? { ...row, sendAuthorizedAt: Date.now() } : entry));
     return true;
@@ -583,9 +610,14 @@ export function claimBrowserInput(id: string, owner: string, conversationId: str
     const current = await load();
     const entry = current.find((row) => row.id === id);
     if (!entry || !preparable(entry) || (entry.state === 'browser' && !requiresAuthorization) || entry.dueAt > Date.now() || !owner) return null;
+    if (!await accountProjectAvailable(entry, current)) return null;
+    const principal = currentAccountTransport();
+    if (entry.accountId && !principal) return null;
     const completedTurnId = queuedFollowup(entry) ? entry.state === 'browser' ? entry.completedTurnId : await completedStageBoundary(entry, current) : undefined;
     if (queuedFollowup(entry) && !completedTurnId) return null;
     if (await target(entry) !== conversationId) return null;
+    if (!conversationId && entry.state !== 'browser' && sameSessionPolicy(getConfig()) &&
+        (deliveryHooks?.canCreateChat?.() === false || current.some(row => row.id !== id && !row.sessionId && row.state === 'browser'))) return null;
     if (!(await browserInputAllowed(entry))) return null;
     if (entry.purpose === 'decision' && !decisionWaiters.has(id)) return null;
     if (entry.projectId) await projectWorkspace(entry.projectId);
@@ -607,7 +639,7 @@ export function claimBrowserInput(id: string, owner: string, conversationId: str
       ? finishInstruction(settings.finishLeadMinutes) : '';
     const suffix = instruction && !entry.text.includes(instruction) ? '\n\n' + instruction : '';
     let claimed: InputEntry;
-    try { claimed = await prepare({ ...entry, ...(completedTurnId ? { completedTurnId } : {}),
+    try { claimed = await prepare({ ...entry, ...(principal ? { connectionVersion: principal.connectionVersion } : {}), ...(completedTurnId ? { completedTurnId } : {}),
       ...(entry.transportIntent === 'tool' ? { transportIntent: 'browser' } : {}),
       state: 'browser', owner, conversationId, offeredAt: entry.offeredAt ?? Date.now(), requiresAuthorization }, suffix); }
     catch (error) {
@@ -629,7 +661,8 @@ export function bindBrowserInputProject(id: string, owner: string, conversationI
     if (!owner || !/^[0-9a-z-]{8,256}$/i.test(conversationId)) return false;
     const current = await load();
     const entry = current.find(row => row.id === id && row.owner === owner);
-    if (!entry || !['browser', 'sent'].includes(entry.state) || !entry.projectId || entry.purpose === 'decision') return false;
+    if (!entry || !['browser', 'sent'].includes(entry.state) || entry.purpose === 'decision') return false;
+    if (!await accountInputAllowed(entry)) return false;
     if (entry.conversationId && entry.conversationId !== conversationId) return false;
     if (await conversationWasSuperseded(conversationId)) return false;
     // Fence this claim to one conversation durably before creating its session.
@@ -639,7 +672,9 @@ export function bindBrowserInputProject(id: string, owner: string, conversationI
     const session = heldSessionId ? await getSession(heldSessionId) :
       await findSessionByConversation(conversationId, { requireUnique: true }) ?? await createSession({ conversationId, title: userTitle(entry.text, entry.text), titleSource: 'fallback' });
     if (!session || session.conversationId !== conversationId) return false;
-    await assignSessionProject(session.id, entry.projectId);
+    if (entry.accountId) await (await import('./store.js')).bindSessionAccount(session.id, entry.accountId);
+    if (entry.projectId) await assignSessionProject(session.id, entry.projectId);
+    await acceptWorkflowInput(session.id, entry);
     const latest = await load();
     await commit(latest.map(row => row.id === id ? { ...row, deliveredSessionId: session.id } : row));
     return true;
@@ -651,6 +686,7 @@ export function acknowledgeBrowserInput(id: string, owner: string, conversationI
     const entry = current.find((row) => row.id === id && row.owner === owner);
     if (!owner || !entry || !['browser', 'sent', 'decision', 'cancelled'].includes(entry.state) ||
       (entry.state === 'cancelled' && entry.purpose === 'decision')) return false;
+    if (!await accountInputAllowed(entry)) return false;
     if (conversationId !== undefined && !(entry.lifetime === 'temporary-planner' && conversationId === null) && (!conversationId || !/^[0-9a-z-]{8,256}$/i.test(conversationId))) return false;
     if (conversationId && entry.conversationId && entry.conversationId !== conversationId) return false;
     // A fresh user send is not complete until ChatGPT assigns its exact conversation.
@@ -689,6 +725,8 @@ export function acknowledgeToolInput(sessionId: string | null | undefined, conve
     if (!sessionId || !conversationId || !requestId || isChatBlocked(conversationId)) return;
     if ((await getSession(sessionId))?.conversationId !== conversationId) return;
     const current = await load();
+    const owned = current.filter(entry => entry.sessionId === sessionId && entry.state === 'tool');
+    if ((await Promise.all(owned.map(accountInputAllowed))).some(allowed => !allowed)) return;
     const next = current.map(entry => toolInputReceipt(entry, sessionId, conversationId, startedAt));
     if (!next.some((entry, index) => entry !== current[index])) return;
     await commit(next);
@@ -719,6 +757,9 @@ export function offerToolInput(sessionId: string | null | undefined, conversatio
     let payloadFull = false;
     const prepareEntry = async (entry: InputEntry): Promise<InputEntry> => {
       if (entry.sessionId !== sessionId || entry.dueAt > Date.now()) return entry;
+      if (entry.accountId && !currentAccountTransport()) return entry;
+      if (!await accountInputAllowed(entry) || !await accountProjectAvailable(entry, current)) return entry;
+      if (!await workflowInputAllowed(entry)) return entry;
       if (entry.attachments?.length) return entry;
       if (entry.directTurn && entry.state === 'queued' && session.activeTurnId !== entry.directTurn.id) return entry;
       // ChatGPT may reuse one request id for the whole server turn. Receipt follows
@@ -731,7 +772,7 @@ export function offerToolInput(sessionId: string | null | undefined, conversatio
       // Inject now message from the current tool response. Their own FIFO is unchanged.
       if ((entry.state === 'queued' && (entry.mode === 'finish' || entry.mode === 'auto')) || entry.state === 'tool') {
         let prepared: InputEntry;
-        try { prepared = await prepare({ ...entry, conversationId }); }
+        try { prepared = await prepare({ ...entry, conversationId, ...(currentAccountTransport() ? { connectionVersion: currentAccountTransport()!.connectionVersion } : {}) }); }
         catch (error) { return { ...entry, state: 'failed', error: (error as Error).message.slice(0, 200) }; }
         const message = prepared.deliveryText ?? prepared.text;
         const reminder = finishReminder || batch.reminder || (entry.mode === 'finish' ? 'Work on this user task now.' : '');
@@ -782,11 +823,19 @@ export function authorizeBrowserHelperRetry(id: string, sourceSessionId: string)
 }
 
 /** Only a pre-send failure can be declared failed. An ambiguous click stays claimed. */
-export function failBrowserInput(id: string, owner: string, error: string): Promise<boolean> {
+export function failBrowserInput(id: string, owner: string, error: string, retryAfterMs?: number): Promise<boolean> {
   return serial(async () => {
     const current = await load();
     const entry = current.find((row) => row.id === id && row.owner === owner && row.state === 'browser');
     if (!entry) return false;
+    const kind = classifyFailure(error);
+    if (sameSessionPolicy(getConfig()) && entry.purpose !== 'decision' && ['network', 'timeout'].includes(kind) && (entry.retryCount ?? 0) < 2) {
+      const retryCount = (entry.retryCount ?? 0) + 1;
+      const wait = Number.isFinite(retryAfterMs) && retryAfterMs! > 0 ? Math.min(24 * 60 * 60 * 1000, retryAfterMs!) : 1000 * 2 ** (retryCount - 1);
+      await commit(current.map(row => row === entry ? { ...row, state: 'queued', owner: null, sendAuthorizedAt: undefined,
+        dueAt: Date.now() + wait, retryCount, error: `Not sent. Retry ${retryCount}/2 scheduled: ${error}`.slice(0, 200) } : row));
+      return true;
+    }
     await commit(current.map((row) => row === entry ? { ...row, state: 'failed', error: error.slice(0, 200) } : row));
     decisionWaiters.get(id)?.reject(new Error('goal_browser_send_failed'));
     decisionWaiters.delete(id);

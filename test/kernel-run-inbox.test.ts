@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 const broker = vi.hoisted(() => ({ offer: vi.fn(), ack: vi.fn(), bareOffer: vi.fn(), bareAck: vi.fn(), release: vi.fn(), alive: vi.fn(), record: vi.fn() }));
 vi.mock('../src/main/agents.js', async (original) => ({
@@ -22,7 +22,26 @@ vi.mock('../src/main/session/input.js', () => ({ offerToolInput: async () => ({ 
 import { createRegistrar, dispatch, ok } from '../src/main/mcp/kernel.js';
 import { currentCall } from '../src/main/mcp/call-context.js';
 import { withInboundRequestId } from '../src/main/mcp/inbound.js';
-import { defaultConfig } from '../src/main/config.js';
+import { defaultConfig, initConfigPath, saveConfig } from '../src/main/config.js';
+import { initSessionStore, createSession, flushSessions, resetSessionStoreForTests } from '../src/main/session/store.js';
+import { makeTempDir, removeTempDir } from './helpers.js';
+
+let directory: string;
+beforeAll(async () => {
+  directory = await makeTempDir('kernel-run-inbox-');
+  initSessionStore(directory);
+  initConfigPath(directory);
+  const config = defaultConfig();
+  // This suite covers retained advanced helper routing, not the same-session default.
+  await saveConfig({ ...config, goal: { ...config.goal, executionPolicy: 'legacy-helper' },
+    multiAgent: { ...config.multiAgent, enabled: true, allowUnattributedCalls: true } });
+  for (const conversationId of ['chat-a', 'chat-b']) {
+    await createSession({ conversationId, title: `Legacy helper ${conversationId}` });
+  }
+});
+afterAll(async () => {
+  await flushSessions(); resetSessionStoreForTests(); await removeTempDir(directory);
+});
 beforeEach(() => {
   vi.clearAllMocks();
   broker.alive.mockReturnValue(null);

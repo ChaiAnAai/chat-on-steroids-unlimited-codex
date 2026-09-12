@@ -11,6 +11,10 @@
  */
 
 import { createHash } from 'node:crypto';
+import { checkpointSchema } from '../../shared/workflow.js';
+import { accountPrincipalCurrent, sessionOwnedByAccount } from './account-guard.js';
+import { reportCheckpoint } from '../session/workflow.js';
+import { currentCaller, currentCall } from './call-context.js';
 import { z } from 'zod';
 import type { SessionEvent, SessionSummary, StoredText } from '../../shared/session.js';
 import { getSession, indexedSessions, readEvents } from '../session/store.js';
@@ -98,7 +102,8 @@ interface SearchMatch {
 
 const inputSchema = z
   .object({
-    action: z.enum(['search', 'read']).describe('search discovers recordings; read inspects one explicit recording.'),
+    action: z.enum(['search', 'read', 'checkpoint']).describe('search/read inspect recordings; checkpoint reports progress for the exact calling turn.'),
+    checkpoint: checkpointSchema.optional(),
     query: z.string().max(500).optional().describe('search only. Omit to list the 30 newest recordings.'),
     session_id: z.string().min(8).max(64).optional().describe('read only. Exact id returned by search.'),
     include: z
@@ -124,6 +129,12 @@ const inputSchema = z
       )
   })
   .superRefine((input, ctx) => {
+    if (input.action === 'checkpoint') {
+      if (!input.checkpoint) ctx.addIssue({ code: 'custom', path: ['checkpoint'], message: 'checkpoint is required' });
+      if (input.session_id || input.query || input.cursor || input.include || input.tool_call) ctx.addIssue({ code: 'custom', message: 'Checkpoint identity is supplied by the caller, not arguments' });
+      return;
+    }
+    if (input.checkpoint) ctx.addIssue({ code: 'custom', message: 'checkpoint is only valid with action=checkpoint' });
     if (input.action === 'search') {
       for (const field of ['session_id', 'include', 'tool_call'] as const) {
         if (input[field] !== undefined) {
@@ -161,17 +172,23 @@ export function registerSessionTool(reg: SurfaceRegistrar): void {
     toolDeclaration('session', () => ({
       title: 'Recorded sessions',
       description:
-        'Search and read this app’s local recordings, including other and concurrently running chats. ' +
+        'Use action=checkpoint with checkpoint {revision,outcome:continue|completed|blocked,summary,next?,evidence:[]} before finishing a task turn. Read the current session workflow revision first. This does not execute or send anything. Search and read this app’s local recordings, including other and concurrently running chats. ' +
         'action=search lists the 30 newest sessions when query is omitted, or finds recordings containing a term. ' +
         'action=read requires session_id and returns exact user/assistant text plus compact tool headlines. ' +
         'To follow a running chat, pass the update_cursor from the previous read and only activity since then comes back. ' +
         'Pass a short T… reference as tool_call to inspect exact arguments and result. Cursors are short tokens; copy them exactly.',
       inputSchema,
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
     })),
     async (input) =>
       guard('session', async () => {
         if (!reg.sessionToolsLive) return reg.featureDisabled('Session recording', 'Record sessions');
+        if (input.action === 'checkpoint') {
+          const caller = currentCaller();
+          const session = caller.sessionId ? await getSession(caller.sessionId) : null;
+          if (!caller.sessionId || !caller.conversationId || !session?.activeTurnId) return fail('Exact active session identity is required');
+          return ok(await reportCheckpoint(caller.sessionId, caller.conversationId, session.activeTurnId, currentCall()!.startedAt, input.checkpoint!));
+        }
         if (input.action === 'search') return searchSessions(input.query, input.cursor);
         return readSession(input.session_id!, input.include, input.tool_call, input.cursor);
       })
@@ -192,7 +209,9 @@ async function searchSessions(queryInput?: string, cursorInput?: string): Promis
 
   // Search must not report completion while retained sessions remain beyond the
   // compatibility list's scan cap. Share the same full catalog as identity repair.
-  const sessions = await indexedSessions();
+  const principal = currentCall()?.caller.account ?? null;
+  if (!await accountPrincipalCurrent(principal)) return fail('ACCOUNT_OWNERSHIP_REQUIRED: account connection is no longer current.');
+  const sessions = (await indexedSessions()).filter(session => sessionOwnedByAccount(session, principal));
   if (sessions.length === 0) return ok('No recorded sessions exist on this machine yet.');
   if (offset >= sessions.length) return ok('No older recorded sessions remain.\nsearch_complete: true');
 
@@ -327,6 +346,9 @@ async function readSession(
 ): Promise<ToolResult> {
   const summary = await getSession(sessionId);
   if (!summary) return fail(`Recorded session ${sessionId} does not exist.`);
+  const principal = currentCall()?.caller.account ?? null;
+  if (!sessionOwnedByAccount(summary, principal) || !await accountPrincipalCurrent(principal))
+    return fail('ACCOUNT_OWNERSHIP_REQUIRED: this recording is not available to the authenticated account.');
 
   if (cursorInput) {
     const decoded = decodeCursor(cursorInput, sessionId);
@@ -800,6 +822,7 @@ function sessionHeader(summary: SessionSummary): string {
     `Session: ${summary.id}\nTitle: ${summary.title}\n` +
     `Started: ${formatDate(summary.startedAt)}\nUpdated: ${formatDate(summary.updatedAt)}\n` +
     `State: ${summary.endedAt === null ? 'active' : 'ended'}\n` +
+    (summary.workflow ? `Workflow: revision ${summary.workflow.revision}; ${summary.workflow.intent}; ${summary.workflow.mode}; continuation budget ${summary.workflow.used}/10; ${summary.workflow.pause ?? 'ready'}\nObjective: ${summary.workflow.objective}\n` : 'Workflow: revision 0; execute; automation off\n') +
     `Recorded: ${summary.userMessages} user · ${summary.toolCalls} tools · ${summary.events} events${failures ? ` · ${failures}` : ''}`
   );
 }

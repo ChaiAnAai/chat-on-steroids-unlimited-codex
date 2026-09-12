@@ -6,7 +6,7 @@ import type { InputAttachment } from '../shared/input.js';
 import type { UsageOverview } from '../shared/usage.js';
 import type { InputArgs, InputEntry } from '../main/session/input.js';
 import type { LocalProject } from '../shared/projects.js';
-import type { PluginSnapshot, PluginInstallRequest, PluginConfigPatch } from '../shared/plugins.js';
+import type { PluginSnapshot, PluginInstallRequest, PluginConfigPatch, PluginRegistryQuery, PluginRegistryPage } from '../shared/plugins.js';
 /**
  * The entire renderer-facing API.
  *
@@ -74,8 +74,25 @@ export interface SessionDetail {
 }
 
 const api = {
+  skills: (request: import('../shared/skills.js').SkillRequest) => call<import('../shared/skills.js').SkillResponse>('skills:manage', request),
+  pluginsPreflight: (kind: 'npm' | 'python' | 'remote') => call<{ ready: boolean; runtime: string }>('plugins:preflight', { kind }),
+  pluginsLibrary: (request: { action: 'list' } | { action: 'favorite'; name: string; enabled: boolean } | { action: 'view'; name: string }) =>
+    call<{ favorites: string[]; recent: { name: string; at: number }[] }>('plugins:library', request),
+  accountManagement: async (accounts: import('../shared/accounts.js').AccountManagementRequest): Promise<import('../shared/accounts.js').AccountManagementResult> => {
+    const result = await call<import('../shared/accounts.js').AccountManagementResult>('browser:preferences', { accounts });
+    return result.ok ? result.data : result;
+  },
+  saveLanguage: (languageOnly?: 'en' | 'zh-CN', migrate = false) => call<'en' | 'zh-CN'>('settings:save', { languageOnly, migrate }),
+  proxyManagement: async (proxy: import('../shared/proxy-management.js').ProxyManagementRequest) => {
+    const result = await call<import('../shared/proxy-management.js').ProxyManagementResult>('browser:preferences', { proxy });
+    return result.ok ? result.data : result;
+  },
+  selectProjectSession: (id: string, sessionId?: string) => call<import('../shared/projects.js').LocalProject[]>('projects:list', { id, sessionId }),
+  resumeWorkflow: (id: string, clearRestriction = false) => call<import('../main/bridge.js').SessionControlsView>('sessions:controls', { id, action: clearRestriction ? 'resume-connection' : 'resume' }),
   openLegalNotices: () => call<void>('plugins:legalNotices'),
   pluginsSnapshot: () => call<PluginSnapshot>('plugins:snapshot'),
+  pluginsRegistrySearch: (query: PluginRegistryQuery) => call<PluginRegistryPage>('plugins:registrySearch', query),
+  pluginsRegistryIcon: (query: {name:string;version:string}) => call<{dataUrl:string;theme?:'light'|'dark'}|null>('plugins:registryIcon', query),
   pluginsInstall: (request: PluginInstallRequest) => call<PluginSnapshot>('plugins:install', request),
   pluginsConfigure: (id: string, patch: PluginConfigPatch) => call<PluginSnapshot>('plugins:configure', { id, patch }),
   pluginsRestart: (id: string) => call<PluginSnapshot>('plugins:restart', { id }),
@@ -142,6 +159,7 @@ const api = {
   addProject: () => call<LocalProject | null>('projects:add'),
   removeProject: (id: string) => call<LocalProject>('projects:remove', { id }),
   getSessionImage: (id: string, assetId: string) => call<string | null>('sessions:image', { id, assetId }),
+  saveSessionImage: (id: string, assetId: string) => call<boolean>('sessions:image', { id, assetId, action: 'save' }),
   getSession: (id: string, options?: { from?: number; before?: number; limit?: number }) =>
     call<SessionDetail>('sessions:events', { id, ...options }),
   stopSessionTurn: (id: string, expectedTurnId: string) => call<SessionControlsView>('sessions:stopTurn', { id, expectedTurnId }),

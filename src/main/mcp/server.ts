@@ -26,6 +26,9 @@ import { getConfig } from '../config.js';
 import { logError, logInfo, logWarn } from '../logger.js';
 import { buildServer, resetToolClock, type ToolContext } from './tools.js';
 import { SURFACE_IDS, surfaceDefinition, type SurfaceId } from './surfaces.js';
+import { resolveMcpAccountToken } from '../accounts.js';
+import type { TrustedAccountPrincipal } from '../../shared/accounts.js';
+import { withAccountPrincipal } from './account-guard.js';
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
@@ -330,7 +333,10 @@ export async function startMcpServer(getContext: () => ToolContext): Promise<Mcp
   const checkHost = localhostHostValidation();
   const checkOrigin = localhostOriginValidation();
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer((req, res) => { void serve(req, res).catch(() => {
+    if (!res.headersSent) jsonError(res, 500, 'request_failed'); else res.destroy();
+  }); });
+  async function serve(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const timing = createInboundTiming();
     const url = req.url ?? '';
     const pathOnly = url.split('?')[0] ?? '';
@@ -340,8 +346,24 @@ export async function startMcpServer(getContext: () => ToolContext): Promise<Mcp
     // Logged for every request, so the Activity tab shows what actually arrived and
     // what it was answered with. The path is reduced to a shape — it carries the
     // session token — and nothing from the body is logged.
-    const route = routes.find((candidate) => safeEqual(pathOnly, candidate.basePath)) ?? null;
-    const prmRoute = routes.find((candidate) => safeEqual(pathOnly, candidate.prmPath)) ?? null;
+    let route = routes.find((candidate) => safeEqual(pathOnly, candidate.basePath)) ?? null;
+    let prmRoute = routes.find((candidate) => safeEqual(pathOnly, candidate.prmPath)) ?? null;
+    let principal: TrustedAccountPrincipal | null = null;
+    // Account connectors share the existing listener and per-surface implementation.
+    // Secrets are resolved by the durable registry; request bodies cannot select identity.
+    const resourcePath = pathOnly.startsWith(PRM_PREFIX) ? pathOnly.slice(PRM_PREFIX.length) : pathOnly;
+    const accountPath = /^\/mcp\/(core|desktop|plugins)\/([A-Za-z0-9_-]{32,256})$/.exec(resourcePath);
+    if (!route && !prmRoute && accountPath) {
+      if (!checkHost(req, res) || !checkOrigin(req, res)) return;
+      try { principal = await resolveMcpAccountToken(accountPath[1] as SurfaceId, accountPath[2]!); }
+      catch { principal = null; } // Missing/unreadable account registry never authorizes a path.
+      if (principal) {
+        const base = routes.find(candidate => candidate.id === accountPath[1])!;
+        const accountRoute = { ...base, basePath: resourcePath, prmPath: `${PRM_PREFIX}${resourcePath}`,
+          url: base.url.replace(base.basePath, resourcePath) };
+        if (resourcePath !== pathOnly) prmRoute = accountRoute; else route = accountRoute;
+      }
+    }
 
     const startedAt = Date.now();
     const publication = { completedAt: null as number | null, failed: false };
@@ -353,7 +375,7 @@ export async function startMcpServer(getContext: () => ToolContext): Promise<Mcp
         ? `mcp/${route.id}`
         : prmRoute
           ? `oauth-metadata/${prmRoute.id}`
-          : pathOnly.slice(0, 40);
+          : pathOnly.includes('/mcp/') ? 'mcp/unknown' : pathOnly.slice(0, 40);
       const method = req.method ?? '?';
       const who = selfTest ? ' (self-test)' : tunnelProbe ? ' (tunnel probe)' : '';
       const line = `${method} ${shape} → ${res.statusCode} in ${Date.now() - startedAt}ms${who}${formatInboundTiming(timing)}`;
@@ -419,12 +441,12 @@ export async function startMcpServer(getContext: () => ToolContext): Promise<Mcp
           jsonError(res, 400, 'invalid_json');
           return;
         }
-        withInboundRequestId(requestId, () => void route.handler(req, res, parsed.body), timing, publication);
+        withAccountPrincipal(principal, () => withInboundRequestId(requestId, () => void route!.handler(req, res, parsed.body), timing, publication));
       });
       return;
     }
-    withInboundRequestId(requestId, () => void route.handler(req, res), timing, publication);
-  });
+    withAccountPrincipal(principal, () => withInboundRequestId(requestId, () => void route!.handler(req, res), timing, publication));
+  }
 
   // Reject slow or oversized bodies rather than holding sockets open indefinitely.
   server.headersTimeout = 30_000;

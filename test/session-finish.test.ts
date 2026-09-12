@@ -14,7 +14,7 @@ vi.mock('../src/main/goal.js', async importOriginal => ({ ...await importOrigina
 vi.mock('../src/main/mcp/call-context.js', async (importOriginal) => ({
   ...await importOriginal<object>(), currentCall: () => ({ caller: { ...hooks.caller }, startedAt: hooks.startedAt })
 }));
-const { defaultConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
+const { defaultConfig: productDefaultConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
 const { initSessionStore, createSession, getSession, rebindSession, appendEvent, readRecentEvents, flushSessions, resetSessionStoreForTests, observeSessionModel } = await import('../src/main/session/store.js');
 const { resetRecorderForTests } = await import('../src/main/session/recorder.js');
 const { announceSessionFinish: announceTransport, settleSessionFinishForTests, requestSessionFinishGoal, sessionFinishWaiting, setFinishNotifier, releaseSessionFinish, sessionFinishHeld } = await import('../src/main/session/finish.js');
@@ -394,3 +394,6 @@ describe('session finish turn identity', () => {
     expect(result).not.toContain('Stale follow-up must not escape');
   });
 });
+
+// Retained advanced helper-policy regression fixture. New default is covered by workflow.test.ts.
+function defaultConfig(...args: Parameters<typeof productDefaultConfig>) { const config = productDefaultConfig(...args); config.goal.executionPolicy = 'legacy-helper'; return config; }

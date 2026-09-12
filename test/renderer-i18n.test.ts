@@ -13,31 +13,20 @@ beforeEach(() => {
 afterEach(() => dom.window.close());
 
 describe('Chinese app interface', () => {
-  it('exposes flagged setup choices and keeps them synchronized with settings and reloads', async () => {
+  it('translates the unified setup heading and details without duplicate language tabs', async () => {
     window.localStorage.setItem('cos.ui.language', 'zh-CN');
     const { initLanguage } = await import('../src/renderer/i18n.js');
     initLanguage();
-    const english = document.querySelector<HTMLButtonElement>('[data-language="en"]')!;
-    const chinese = document.querySelector<HTMLButtonElement>('[data-language="zh-CN"]')!;
     const select = document.getElementById('uiLanguage') as HTMLSelectElement;
-    expect(chinese.closest('[data-panel="setup"]')).not.toBeNull();
-    expect(chinese.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
-    expect(english.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
-    expect(chinese.getAttribute('aria-pressed')).toBe('true');
-    expect(select.value).toBe('zh-CN');
-    english.click();
-    expect(select.value).toBe('en');
-    expect(english.getAttribute('aria-pressed')).toBe('true');
-    expect(chinese.getAttribute('aria-pressed')).toBe('false');
-    expect(document.querySelector('.setup-heading h1')!.textContent).toBe('Setup');
-    chinese.click();
+    expect(document.querySelector('[data-panel="setup"] .language-tabs')).toBeNull();
     expect(select.value).toBe('zh-CN');
     expect(document.querySelector('.setup-heading h1')!.textContent).toBe('连接设置');
+    expect(document.querySelector('#connectionDetails > summary')!.textContent).toBe('连接配置详情');
+    select.value = 'en'; select.dispatchEvent(new dom.window.Event('change'));
+    expect(document.querySelector('.setup-heading h1')!.textContent).toBe('Setup');
+    expect(document.querySelector('#connectionDetails > summary')!.textContent).toBe('Connection details');
+    // The main process owns persistence; this renderer-only test keeps the legacy value.
     expect(window.localStorage.getItem('cos.ui.language')).toBe('zh-CN');
-    select.value = 'en';
-    select.dispatchEvent(new dom.window.Event('change'));
-    expect(english.getAttribute('aria-pressed')).toBe('true');
-    expect(chinese.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('switches both ways without replacing controls, icons, emphasis, drafts or authored content', async () => {
@@ -79,21 +68,27 @@ describe('Chinese app interface', () => {
       if (snapshots.has(locale)) expect(shell).toBe(snapshots.get(locale));
       else snapshots.set(locale, shell);
     }
-    expect(window.localStorage.getItem('cos.ui.language')).toBe('zh-CN');
+    // The production shell wires this callback to settings IPC; no renderer storage is used.
+    expect(window.localStorage.getItem('cos.ui.language')).toBe(null);
   });
 
   it('retains a newer authored value and persists the explicit language across renderer reloads', async () => {
     const first = await import('../src/renderer/i18n.js');
+    let persisted: string | undefined;
+    first.configureLanguagePersistence(value => { persisted = value; });
     first.initLanguage();
     const node = document.createElement('div');
     first.ui(node, 'textContent', () => first.t('New chat'));
     node.textContent = 'User title — 保留原文';
     first.setLanguage('zh-CN');
+    expect(persisted).toBe('zh-CN');
     expect(node.textContent).toBe('User title — 保留原文');
     vi.resetModules();
     const next = await import('../src/renderer/i18n.js');
-    expect(next.currentLanguage()).toBe('zh-CN');
-    expect(next.t('Settings')).toBe('设置');
+    // A renderer reload alone has no authority to select a language after migration;
+    // the main process supplies it during startup.
+    expect(next.currentLanguage()).toBe('en');
+    expect(next.t('Settings')).toBe('Settings');
     expect(next.t('not in the catalog')).toBe('not in the catalog');
     expect(next.t('__proto__')).toBe('__proto__');
     expect(next.t('toString')).toBe('toString');

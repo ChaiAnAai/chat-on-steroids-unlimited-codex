@@ -1,0 +1,18 @@
+.connection-guide { display: block; min-height: 0; max-width: 1040px; margin: 0 auto 20px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
+.connection-guide .connection-guide-title { margin: 0 0 12px; font-size: 1rem; font-weight: 600; }
+.connection-guide .muted { color: var(--soft); line-height: 1.6; }
+.connection-guide-language { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 36px; margin-bottom: 10px; }
+.connection-guide .connection-guide-label { display: inline-flex; align-items: center; gap: 12px; width: auto; margin: 0; font-weight: 500; }
+.connection-guide select.connection-guide-language-select { flex: 0 0 148px; width: 148px; min-width: 0; max-width: 148px; }
+.connection-guide .connection-guide-language-status { margin: 0; padding: 0; font-size: 12px; }
+.connection-guide-overview { display: grid; gap: 0; margin-bottom: 12px; }
+.connection-guide-status-row { display: grid; grid-template-columns: minmax(120px, 1fr) auto auto; align-items: center; gap: 8px 16px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--line); }
+.connection-guide-row-title { font-weight: 500; }
+.connection-guide-state { color: var(--soft); font-size: 12px; white-space: nowrap; }
+.connection-guide-status-row .btn { min-width: 100px; min-height: 32px; margin: 0; padding: 4px 10px; }
+.connection-guide-proxy { border-top: 1px solid var(--line); padding-top: 8px; }
+.connection-guide-proxy summary { cursor: pointer; min-height: 36px; font-weight: 600; }
+.connection-guide-proxy-field { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(180px, 2fr); gap: 16px; align-items: center; margin: 12px 0; }
+.connection-guide input, .connection-guide select { min-height: var(--control-height, 36px); max-width: 100%; color: var(--ink); background: var(--page); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.connection-guide-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+@media (max-width: 700px) { .connection-guide { padding: 12px; } .connection-guide-proxy-field { grid-template-columns: 1fr; gap: 4px; } .connection-guide-status-row { grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; } .connection-guide-status-row .btn { min-width: 0; } }

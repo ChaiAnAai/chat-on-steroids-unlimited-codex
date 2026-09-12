@@ -134,7 +134,7 @@ async function settle(ms = 0): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-async function boot(events: SessionEvent[], selectExisting = true, pausedHelpers: Array<{ id: string; sourceSessionId: string }> = [], projects: LocalProject[] = [], options: { origin?: SessionSummary["origin"]; developerMode?: boolean; sessions?: SessionSummary[] } = {}) {
+async function boot(events: SessionEvent[], selectExisting = true, pausedHelpers: Array<{ id: string; sourceSessionId: string }> = [], projects: LocalProject[] = [], options: { origin?: SessionSummary["origin"]; developerMode?: boolean; sessions?: SessionSummary[]; executionPolicy?: 'same-session' | 'legacy-helper' } = {}) {
   const html = await fs.readFile(path.join(process.cwd(), 'src', 'renderer', 'index.html'), 'utf8');
   dom = new JSDOM(html, { url: 'https://local.test/', pretendToBeVisual: true });
   const w = dom.window;
@@ -166,7 +166,7 @@ async function boot(events: SessionEvent[], selectExisting = true, pausedHelpers
     sessions: { record: true, retainDays: 30, advisoryTokens: 300000, limitTokens: 400000 },
     compaction: { auto: true, autoTokens: 300000 },
     multiAgent: { enabled: false, maxWorkers: 2, allowUnattributedCalls: false, recoverAgentTabs: true },
-    goal: { enabled: false, model: 'deepseek/deepseek-v4-flash', reasoning: 'default' as const, prompt: DEFAULT_GOAL_SYSTEM_PROMPT }
+    goal: { executionPolicy: options.executionPolicy ?? 'legacy-helper', enabled: false, model: 'deepseek/deepseek-v4-flash', reasoning: 'default' as const, prompt: DEFAULT_GOAL_SYSTEM_PROMPT }
   };
   const state = {
     config,
@@ -185,6 +185,7 @@ async function boot(events: SessionEvent[], selectExisting = true, pausedHelpers
   const api: any = new Proxy(
     {
       getState: () => ok(state),
+      saveLanguage: (language?: string) => ok(language ?? 'en'),
       getChatModels: () => ok({ state: 'ready', requestedAt: 1, observedAt: Date.now(), models: [{ id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', efforts: ['none', 'high'] }] }),
       getSessionControls: (id: string) => ok({ sessionId: id, conversationId: 'chat-a', automation: live.automation, activeTurnId: 'held-turn', finishHeld: live.finishHeld, blocked: '', job: live.compacting ? { busy: true } : null }),
       releaseSessionFinish: (id: string, turn: string) => { live.controlCalls.push({ id, action: `release:${turn}` }); live.finishHeld = false; return ok({}); },
@@ -447,7 +448,7 @@ it('uses the same separate image row for pending and recorded native attachments
   expect(recorded.querySelector('.composer-image')).toBeNull();
 });
 
-it('loads recorded tool images on expansion and hides truncated binary envelopes', async () => {
+it('shows recorded image cards outside collapsed tool details and hides truncated binary envelopes', async () => {
   const app = await boot([]);
   const { w } = app;
   const event = toolCall(1, 'plugin-image') as Extract<SessionEvent, { kind: 'tool_call' }>;
@@ -458,13 +459,13 @@ it('loads recorded tool images on expansion and hides truncated binary envelopes
   (w as any).api.getSessionImage = getImage;
   await app.append([event]);
   const tool = w.document.querySelector('details.tool') as HTMLDetailsElement;
-  expect(getImage).not.toHaveBeenCalled();
   expect(tool.textContent).not.toContain('AAAA');
   expect(tool.textContent).toContain('aaaaaaaa.txt');
   tool.open = true; tool.dispatchEvent(new w.Event('toggle'));
   await settle();
   expect(getImage).toHaveBeenCalledWith(summary([]).id, 'abcdefab.png');
-  expect(tool.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,YQ==');
+  expect(tool.parentElement?.querySelector('.artifact-card')).not.toBeNull();
+  expect(tool.querySelector('.artifact-card')).toBeNull();
 });
 
 it('pages project tasks as complete parent/worker groups and keeps the selected task visible after reordering', async () => {
@@ -590,7 +591,7 @@ it('Share a folder creates a sidebar project and keeps it when an older list ref
   await settle();
   expect(w.document.querySelector(`[data-project-id="${project.id}"]`)).not.toBeNull();
   expect(input.placeholder).toContain('Shared');
-  input.value = 'Work in this folder';
+  input.value = 'Work in this folder'; input.dispatchEvent(new w.Event('input'));
   (w.document.getElementById('chatSend') as HTMLButtonElement).click();
   await settle();
   expect(live.sent[0]).toMatchObject({ sessionId: null, projectId: project.id, text: 'Work in this folder' });
@@ -603,7 +604,7 @@ it('preserves the draft and refuses send while model discovery has no confirmed 
   (w.document.getElementById('refreshComposerModels') as HTMLButtonElement).click();
   await settle();
   const input = w.document.getElementById('chatInput') as HTMLTextAreaElement;
-  input.value = 'Keep this until a real model is selected';
+  input.value = 'Keep this until a real model is selected'; input.dispatchEvent(new w.Event('input'));
   (w.document.getElementById('chatSend') as HTMLButtonElement).click();
   await settle();
   expect(input.value).toBe('Keep this until a real model is selected');
@@ -636,7 +637,7 @@ it('groups project chats and starts an empty composer with the selected project 
   choose(projects[1]!.id); expect(input.value).toBe(''); input.value = 'Beta draft';
   (w.document.getElementById('newChat') as HTMLButtonElement).click();
   expect(input.value).toBe(''); input.value = 'Unfiled draft';
-  choose(projects[0]!.id); expect(input.value).toBe(''); input.value = 'Alpha request';
+  choose(projects[0]!.id); expect(input.value).toBe(''); input.value = 'Alpha request'; input.dispatchEvent(new w.Event('input'));
   (w.document.getElementById('chatSend') as HTMLButtonElement).click();
   await settle();
   expect(live.sent[0]).toMatchObject({ sessionId: null, projectId: projects[0]!.id, text: 'Alpha request' });
@@ -673,7 +674,7 @@ it('folds a whole Compact & Resume into one row that says the new chat opened', 
 
   // Everything is still there for whoever unfolds the card.
   card.toggleAttribute('open', true);
-  expect(card.textContent).toContain('Brief request');
+  expect(card.textContent).toContain('Technical details · handoff request');
   expect(card.textContent).toContain('keep the loop running');
   expect(card.textContent).toContain('Handoff saved');
   expect(card.textContent).toContain('Bootstrap sent into the new chat');
@@ -725,8 +726,8 @@ it.each(['composer', 'bubble'])('clears New Chat drafts and removes a delivery c
   expect(live.inputs[0]!.state).toBe('browser'); // Preserve ambiguous receipts; never retry them.
   const cancel = vi.fn(async (id: string) => { live.inputs = live.inputs.map(row => row.id === id ? { ...row, state: 'cancelled' as const, error: 'Not sent: this delivery was cancelled before Send was authorized.' } : row); return { ok: true, data: true }; });
   (w as any).api.cancelInput = cancel;
-  expect(w.document.getElementById('chatSend')!.getAttribute('aria-label')).toBe('Cancel delivery');
-  if (control === 'composer') w.document.getElementById('composer')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
+  expect(w.document.getElementById('chatStop')!.getAttribute('aria-label')).toBe('Cancel delivery');
+  if (control === 'composer') w.document.getElementById('chatStop')!.click();
   else (w.document.querySelector('#inputQueue [title="Cancel delivery"]') as HTMLButtonElement).click();
   await settle();
   expect(cancel).toHaveBeenCalledWith(live.inputs[0]!.id);
@@ -996,6 +997,20 @@ it('keeps an unfolded tool row as the same open node while the chat keeps append
   expect(group.querySelector('summary')!.title).toContain('4 actions');
 });
 
+it('keeps visible native thought feedback outside collapsed tools and updates same-length summaries in place', async () => {
+  const activity: SessionEvent = { seq: 3, time: T0 + 3000, source: 'extension', kind: 'page_tool', messageId: 'public-thought', label: 'Thinking', detail: 'Checking A' };
+  const { w, append } = await boot([toolCall(1, 'first'), toolCall(2, 'second'), activity]);
+  const timeline = w.document.getElementById('timeline')!;
+  expect(timeline.querySelector('.tool-group .native-activity')).toBeNull();
+  expect(timeline.querySelector('.native-activity-detail')!.textContent).toBe('Checking A');
+  await append([{ ...activity, seq: 4, origin: 3, detail: 'Checking B' }]);
+  expect(timeline.querySelectorAll('.native-activity')).toHaveLength(1);
+  expect(timeline.querySelector('.native-activity-detail')!.textContent).toBe('Checking B');
+  await append([{ ...activity, seq: 5, origin: 3, label: 'Checked', detail: undefined }]);
+  expect(timeline.querySelector('.native-activity-detail')!.textContent).toBe('Checking B');
+  expect(timeline.querySelector('.thinking-line')!.textContent).toContain('Checked');
+});
+
 it('keeps mixed tool and agent activity in one latest-action disclosure between authored messages', async () => {
   const { w, append } = await boot([
     { seq: 1, time: T0, source: 'extension', kind: 'progress', message: text('Checking the implementation') },
@@ -1131,46 +1146,48 @@ it('shows elapsed work for the exact recorded turn without exposing lifecycle ro
 });
 
 
-it('stops directly from the empty composer without a second Stop menu action', async () => {
+it('stops with an independent control while preserving a follow-up draft', async () => {
   const { w } = await boot([]);
   const stop = vi.fn(async () => ({ ok: true, data: {} }));
   (w as any).api.stopSessionTurn = stop;
   const input = w.document.getElementById('chatInput') as HTMLTextAreaElement;
   const send = w.document.getElementById('chatSend') as HTMLButtonElement;
-  expect(send.getAttribute('aria-label')).toBe('Stop turn');
+  expect(w.document.getElementById('chatStop')!.getAttribute('aria-label')).toBe('Stop turn');
   input.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   await settle(); expect(stop).not.toHaveBeenCalled();
   input.value = 'Keep this draft'; input.dispatchEvent(new w.Event('input'));
   expect(send.getAttribute('aria-label')).toBe('Send message');
   expect(w.document.getElementById('sendOptions')!.hidden).toBe(false);
   expect(w.document.getElementById('stopTurnAction')).toBeNull();
-  input.value = ''; input.dispatchEvent(new w.Event('input'));
   expect(w.document.getElementById('sendOptions')!.hidden).toBe(false);
-  send.click();
+  w.document.getElementById('chatStop')!.click();
   await settle();
   expect(stop).toHaveBeenCalledWith('2026-09-02-test0001', 'held-turn');
-  expect(input.value).toBe('');
+  expect(input.value).toBe('Keep this draft');
 });
 
-it('shows Stop immediately for a queued first send, switches to Send for a new draft, and cancels through the same button', async () => {
+it('keeps cancellation separate from sending while a new draft is edited', async () => {
   const { w, live } = await boot([], false);
   const input = w.document.getElementById('chatInput') as HTMLTextAreaElement;
   const send = w.document.getElementById('chatSend') as HTMLButtonElement;
   const form = w.document.getElementById('composer')!;
   input.value = 'First request';
   form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
-  expect(send.dataset.action).toBe('stop');
-  expect(send.disabled).toBe(false);
+  expect(send.dataset.action).toBe('send');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
+  expect(w.document.getElementById('chatStop')!.hasAttribute('disabled')).toBe(false);
   await settle();
-  expect(send.dataset.action).toBe('stop');
+  expect(send.dataset.action).toBe('send');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
   expect(w.document.querySelector('#inputQueue button')?.textContent).not.toBe('Cancel');
   input.value = 'Second request'; input.dispatchEvent(new w.Event('input'));
   expect(send.dataset.action).toBe('send');
   input.value = ''; input.dispatchEvent(new w.Event('input'));
-  expect(send.dataset.action).toBe('stop');
+  expect(send.dataset.action).toBe('send');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
   const cancel = vi.fn(async (id: string) => { live.inputs = live.inputs.map(row => row.id === id ? { ...row, state: 'cancelled' } : row); return { ok: true, data: true }; });
   (w as any).api.cancelInput = cancel;
-  form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+  w.document.getElementById('chatStop')!.click();
   await settle();
   expect(cancel).toHaveBeenCalledWith(live.sent[0]!.id);
   expect(send.dataset.action).toBe('send');
@@ -1323,7 +1340,7 @@ it('disables empty task actions and confirms saving without the old helper sente
   plan.click();
   expect(plan.getAttribute('aria-pressed')).toBe('false');
   expect((w.document.getElementById('chatInput') as HTMLTextAreaElement).placeholder).toBe('Ask anything…');
-  expect(w.document.getElementById('chatSend')!.title).toBe('');
+  expect(w.document.getElementById('chatSend')!.title).toBe('Send message');
   const objective = w.document.getElementById('sessionObjective') as HTMLTextAreaElement;
   objective.value = 'Implement and verify'; objective.dispatchEvent(new w.Event('input'));
   expect(save.disabled).toBe(false); save.click(); await settle();
@@ -1376,12 +1393,15 @@ it('keeps accepted pending-send Stop while the durable queue refresh is still in
   api.sendInput = async (value: InputArgs) => ({ ok: true, data: { ...value, state: 'queued', owner: null, createdAt: Date.now(), conversationId: null } });
   input.value = 'First request';
   form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
-  expect(send.dataset.action).toBe('stop');
+  expect(send.dataset.action).toBe('send');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
   await settle();
-  expect(send.dataset.action).toBe('stop');
+  expect(send.dataset.action).toBe('send');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
   listings[0]!({ ok: true, data: [] });
   await settle();
-  expect(send.dataset.action).toBe('stop');
+  expect(send.dataset.action).toBe('send');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
 });
 
 it('dismisses only the displayed recovery revision and reveals a changed status or new incident', async () => {
@@ -1596,18 +1616,21 @@ it('keeps actual-turn Stop through two authored sends and stops only the capture
   const send = w.document.getElementById('chatSend') as HTMLButtonElement;
   const form = w.document.getElementById('composer')!;
   for (const text of ['First new direction', 'Second new direction']) {
-    expect(send.dataset.action).toBe('stop');
+    expect(send.dataset.action).toBe('send');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
     input.value = text; input.dispatchEvent(new w.Event('input'));
     expect(send.dataset.action).toBe('send');
     form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
-    expect(send.dataset.action).toBe('stop');
+    expect(send.dataset.action).toBe('send');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
     await settle();
-    expect(send.dataset.action).toBe('stop');
+    expect(send.dataset.action).toBe('send');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
   }
   expect(live.sent.map(row => row.text)).toEqual(['First new direction', 'Second new direction']);
   expect(live.sent.every(row => row.sessionId === '2026-09-02-test0001' && row.mode === 'auto')).toBe(true);
   // A queued follow-up does not replace the real active turn as Stop's authority.
-  form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+  w.document.getElementById('chatStop')!.click();
   await settle();
   expect(stop).toHaveBeenCalledWith('2026-09-02-test0001', 'held-turn');
   expect(cancel).not.toHaveBeenCalled();
@@ -1624,7 +1647,7 @@ it('does not retarget an awaiting Stop after leaving and reselecting the same ch
   api.stopSessionTurn = stop;
   let resolve!: (value: any) => void;
   api.getSessionControls = () => new Promise(done => { resolve = done; });
-  w.document.getElementById('composer')!.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+  w.document.getElementById('chatStop')!.click();
   api.getSessionControls = original;
   w.document.getElementById('newChat')!.click();
   (w.document.querySelector('#sessionList [data-id]') as HTMLElement).click();
@@ -1634,7 +1657,7 @@ it('does not retarget an awaiting Stop after leaving and reselecting the same ch
     plan: { updatedAt: 1, plan: [{ step: 'Stale plan', status: 'pending' }] } } });
   await settle();
   expect(stop).not.toHaveBeenCalled();
-  expect(w.document.getElementById('chatSend')!.dataset.action).toBe('stop');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
   expect(w.document.getElementById('agentPlan')!.textContent).toContain('Current plan');
   expect(w.document.getElementById('agentPlan')!.textContent).not.toContain('Stale plan');
 });
@@ -2078,4 +2101,16 @@ it('clears a delivered check when later model activity arrives without a timer',
   await app.append([toolCall(2, 'next-tool')]);
   expect(app.w.document.querySelector('.input-receipt')).toBe(receipt);
   expect(receipt.hidden).toBe(true);
+});
+
+it('keeps an IME composition Enter from sending while Stop remains available', async () => {
+  const { w, live } = await boot([]);
+  const input = w.document.getElementById('chatInput') as HTMLTextAreaElement;
+  input.value = '中文输入中的草稿'; input.dispatchEvent(new w.Event('input'));
+  input.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }));
+  input.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true }));
+  await settle();
+  expect(live.sent).toHaveLength(0);
+  expect(input.value).toBe('中文输入中的草稿');
+  expect(w.document.getElementById('chatStop')!.hidden).toBe(false);
 });

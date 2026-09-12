@@ -38,6 +38,7 @@ function powershellBatch(commands: readonly string[], marker: string): string {
     '    $__cos_batch_succeeded = $?',
     '    $__cos_batch_code = if ($LASTEXITCODE -ne 0) { [int]$LASTEXITCODE } elseif ($__cos_batch_succeeded) { 0 } else { 1 }',
     '  } catch {',
+    '    if ($_.Exception.GetBaseException() -is [System.Management.Automation.ParseException]) { [Console]::Error.WriteLine("ParserError") }',
     '    [Console]::Error.WriteLine($_.ToString())',
     '    $__cos_batch_code = 1',
     '  }',

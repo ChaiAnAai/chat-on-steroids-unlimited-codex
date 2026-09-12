@@ -109,6 +109,8 @@ interface LiveConversation {
 }
 
 interface ProgressRecord {
+  /** Public summary text observed in the native page; never private model reasoning. */
+  detail?: string;
   /** Seq of the first record written for this item — where every reader positions it. */
   seq: number;
   /** And the time it was first seen, for the same reason. */
@@ -541,11 +543,13 @@ async function storedHistory(sessionId: string): Promise<StoredHistory> {
             time: event.time,
             updatedAt: event.time,
             text: event.label,
+            ...(event.detail ? { detail: event.detail } : {}),
             ...(event.turnId ? { turnId: event.turnId } : {})
           });
         } else {
           held.updatedAt = Math.max(held.updatedAt, event.time);
           held.text = event.label;
+          if (event.detail !== undefined) held.detail = event.detail;
           if (!held.turnId && event.turnId) held.turnId = event.turnId;
         }
       }
@@ -1676,14 +1680,16 @@ async function recordPageTool(
 ): Promise<boolean> {
   const id = item.messageId;
   const label = (item.text ?? '').slice(0, 300).trim();
+  const detail = item.detail?.slice(0, 8192).trim() || undefined;
   if (!id || !label) return false;
   if (!live) {
-    await appendEvent(sessionId, { ...base, kind: 'page_tool', messageId: id, label });
+    await appendEvent(sessionId, { ...base, kind: 'page_tool', messageId: id, label, ...(detail ? { detail } : {}) });
     return true;
   }
 
   const held = live.pageTools.get(id);
-  if (held && held.text === label) return false;
+  const summary = detail ?? held?.detail;
+  if (held && held.text === label && held.detail === summary) return false;
 
   const event = await appendEvent(sessionId, {
     ...base,
@@ -1691,13 +1697,15 @@ async function recordPageTool(
     kind: 'page_tool',
     messageId: id,
     label,
+    ...(summary ? { detail: summary } : {}),
     ...(held ? { origin: held.seq } : {})
   });
   live.pageTools.set(id, {
     seq: held ? held.seq : event.seq,
     time: held ? held.time : base.time,
     updatedAt: base.time,
-    text: label
+    text: label,
+    ...(summary ? { detail: summary } : {})
   });
   return true;
 }

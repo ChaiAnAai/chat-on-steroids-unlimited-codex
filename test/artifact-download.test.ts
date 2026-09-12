@@ -27,6 +27,7 @@ import type { ToolContext } from '../src/main/mcp/tools.js';
 import { resetWorkspaces } from '../src/main/workspace.js';
 import { DEFAULT_CAPABILITIES, type Capabilities, type Root } from '../src/shared/types.js';
 import { makeTempDir, removeTempDir } from './helpers.js';
+import { initSessionStore, flushSessions, resetSessionStoreForTests } from '../src/main/session/store.js';
 
 const FILE_ID = 'file-abc123';
 const GOOD_URL = 'https://files.oaiusercontent.com/file-abc123?se=2030&sig=test';
@@ -400,12 +401,16 @@ describe('download_artifact MCP surface', () => {
 
   beforeAll(async () => {
     base = await makeTempDir('clf-artifact-mcp-');
+    // An initialized empty store proves the legacy endpoint has no account-owned sessions.
+    initSessionStore(base);
     approved = path.join(base, 'workspace');
     await fs.mkdir(approved, { recursive: true });
   });
 
   afterAll(async () => {
     if (endpoint) await endpoint.stop();
+    await flushSessions();
+    resetSessionStoreForTests();
     await removeTempDir(base);
   });
 

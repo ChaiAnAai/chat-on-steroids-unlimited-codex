@@ -1,0 +1,10 @@
+.native-activity { min-width: 0; }
+.native-activity .thinking-line { margin-bottom: 6px; }
+.native-activity-detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: .92em;
+  line-height: 1.65;
+  padding-inline-start: 22px;
+  color: var(--muted, inherit);
+}

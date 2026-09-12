@@ -610,6 +610,16 @@ describe('native image readiness', () => {
 
 
 describe('provider limit notice', () => {
+  it('retains the observed Chinese account restriction without dismissing it or retrying', () => {
+    const notice = document.createElement('div'); notice.setAttribute('role', 'dialog');
+    notice.innerHTML = '<h2>请求过于频繁</h2><p>你的请求过于频繁。为保障数据安全，我们已暂时限制你访问对话记录。</p><p>请稍等几分钟后再重试。</p><button>明白了</button>';
+    document.body.append(notice);
+    const click = vi.fn(); notice.querySelector('button')!.addEventListener('click', click);
+    expect(api.errors()).toEqual([expect.objectContaining({ blocking: true, recoverable: false, text: expect.stringContaining('限制你访问对话记录') })]);
+    api.errors(); expect(click).not.toHaveBeenCalled();
+    notice.removeAttribute('role');
+    expect(api.errors()).toEqual([]);
+  });
   it('records and acknowledges the exact Korean access notice once without accepting other dialogs', () => {
     const notice = document.createElement('div'); notice.setAttribute('role', 'dialog');
     notice.innerHTML = '<h2>요청이 너무 많습니다</h2><p>요청을 너무 빠르게 보내고 있습니다. 데이터를 보호하기 위해 대화에 대한 액세스가 일시적으로 제한되었습니다. 몇 분 후 다시 시도해 주세요.</p><button>알겠습니다</button>';

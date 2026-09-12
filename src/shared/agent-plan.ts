@@ -16,6 +16,8 @@ export const agentPlanUpdateSchema = z.object({
 export const agentPlanSchema = agentPlanUpdateSchema.extend({ updatedAt: z.number().finite().nonnegative() });
 export type AgentPlanUpdate = z.infer<typeof agentPlanUpdateSchema>;
 export type AgentPlan = z.infer<typeof agentPlanSchema>;
+/** A previous durable plan revision; this is display history, never an execution queue. */
+export type AgentPlanHistoryEntry = AgentPlan & { revision: number };
 
 /** UTF-8, including JSON escapes and the server timestamp; also the bounded disk-read size. */
 export const MAX_AGENT_PLAN_BYTES = 96 * 1024;

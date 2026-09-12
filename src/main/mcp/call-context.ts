@@ -15,6 +15,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AssetRef, FileChange, ToolOutcome } from '../../shared/session.js';
 import type { OutputPublication } from '../codex/unified-exec.js';
+import type { TrustedAccountPrincipal } from '../../shared/accounts.js';
 
 export interface CallEvidence {
   changes: FileChange[];
@@ -41,6 +42,8 @@ export interface CallEvidence {
  * recorder writes down on purpose.
  */
 export interface CallCaller {
+  /** Authenticated endpoint principal; never accepted from model-written arguments. */
+  account?: TrustedAccountPrincipal | null;
   transportKey: string | null;
   /**
    * ChatGPT's own id for this request, from the `x-request-id` header the connector

@@ -17,6 +17,7 @@ import { WINDOWS_CAPTURE_BOOTSTRAP } from './windows-capture.js';
 import { WINDOWS_APP_IDENTITY_SOURCE, WINDOWS_APPS_SCRIPT } from './windows-apps.js';
 import { WINDOWS_KEYS_SOURCE } from './windows-keys.js';
 import { BROWSER_PROCESS_PATTERN } from './browser-chords.js';
+import { WINDOWS_UIA_TEXT_SOURCE } from './windows-uia-text.js';
 
 export const HELPER_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
@@ -34,6 +35,9 @@ $ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -TypeDefinition @'
+${WINDOWS_UIA_TEXT_SOURCE}
+'@
 
 Add-Type -TypeDefinition @'
 using System;
@@ -822,6 +826,7 @@ function Find-UiElements($request) {
   $selectedText = $null
   $focusedElement = $null
   $textPattern = $null
+  $textElement = $null
   $textPriority = 0
   $browserDocument = $root.Current.ClassName -eq 'BrowserRootView'
   $depthLimited = $false
@@ -898,6 +903,7 @@ function Find-UiElements($request) {
                 $candidate = $null
                 if ($element.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$candidate)) {
                   $textPattern = [System.Windows.Automation.TextPattern]$candidate
+                  $textElement = $element
                   $textPriority = $priority
                 }
               } catch { }
@@ -925,21 +931,13 @@ function Find-UiElements($request) {
   } catch {
     throw "UIA_FAILED: $($_.Exception.Message)"
   }
+  $textUnavailable = $null
   if ($null -ne $textPattern) {
     try {
-      $budget = 8000
-      $selection = New-Object System.Text.StringBuilder
-      $ranges = @($textPattern.GetSelection())
-      foreach ($range in ($ranges | Select-Object -First 4)) {
-        $remaining = [Math]::Min(2000 - $selection.Length, $budget)
-        if ($remaining -le 0) { break }
-        $part = $range.GetText($remaining)
-        $null = $selection.Append($part)
-        $budget -= $part.Length
-      }
-      $selectedText = $selection.ToString()
-      $documentText = $textPattern.DocumentRange.GetText($budget)
-    } catch { }
+      $text = [ClfUiText]::Read($id, $root.GetRuntimeId(), $textElement.GetRuntimeId(), $visitLimit)
+      $documentText = $text[0]
+      $selectedText = $text[1]
+    } catch { $textUnavailable = @{ code = 'UIA_TEXT_UNAVAILABLE'; message = $_.Exception.Message } }
   }
   $snapshotId = Remember-UiSnapshot $id $root $handles
   return @{
@@ -949,6 +947,7 @@ function Find-UiElements($request) {
     visited = $visited
     truncated = ($null -ne $element -or $stack.Count -gt 0 -or $depthLimited)
     document_text = $documentText
+    text_unavailable = $textUnavailable
     selected_text = $selectedText
     focused_element = $focusedElement
   }
@@ -1150,6 +1149,7 @@ function Handle-Request($request) {
           $result.visited = $ui.visited
           $result.truncated = $ui.truncated
           $result.document_text = $ui.document_text
+          if ($ui.text_unavailable) { $result.uiTextUnavailable = $ui.text_unavailable }
           $result.selected_text = $ui.selected_text
           $result.focused_element = $ui.focused_element
         } catch {

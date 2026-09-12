@@ -1,0 +1,14 @@
+.skills-panel { min-width: 0; }
+.skills-panel .settings-heading { margin-bottom: 16px; }
+.skills-list { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.skill-card, .skill-import-preview { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); min-width: 0; }
+.skill-card h2, .skill-import-preview h2 { font-size: 1.1rem; margin: 0 0 8px; }
+.skill-card p, .skill-import-preview p { margin: 8px 0; line-height: 1.5; overflow-wrap: anywhere; }
+.skill-card summary { cursor: pointer; min-height: 32px; align-content: center; color: var(--soft); }
+.skill-source { font-size: var(--code-size, 13px); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+.skill-import-preview { margin-block: 16px; border-color: var(--accent); }
+.skill-import-preview .btn { margin: 4px 8px 0 0; }
+.build-identity { padding: 8px 12px; margin-bottom: 16px; }
+.build-identity summary { cursor: pointer; min-height: 32px; align-content: center; }
+#buildIdentity { white-space: pre-wrap; overflow-wrap: anywhere; }
+@container workspace (max-width: 720px) { .skills-list { grid-template-columns: minmax(0, 1fr); } .skills-panel { padding: 16px; } }

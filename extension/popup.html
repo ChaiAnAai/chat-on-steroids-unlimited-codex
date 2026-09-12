@@ -31,6 +31,17 @@
 
 
       <p class="alert" id="alert" hidden></p>
+      <details id="accountGuide" class="account-guide">
+        <summary>账号配对 · Account pairing</summary>
+        <p>在知行打开这个账号的专用浏览器配置，并复制非秘密配置码。此配置码不是密码或 API Key。</p>
+        <label for="accountConfiguration">账号配置 JSON · Configuration</label>
+        <textarea id="accountConfiguration" rows="3" maxlength="2048" spellcheck="false" autocomplete="off" placeholder='{"accountId":"…","profileRef":"…","browser":"chrome"}'></textarea>
+        <ol><li>请求配对 · Request pairing</li><li>在知行确认本次请求 · Confirm in 知行</li><li>回到这里完成配对 · Finish pairing here</li></ol>
+        <div class="actions"><button id="accountRequestBtn" type="button">请求配对</button><button id="accountClaimBtn" type="button" disabled>完成配对</button></div>
+        <p>重启后先在知行点击“重连并重新确认身份”，然后检查已保存连接；不会恢复旧任务或重发回执。</p>
+        <button id="accountRecheckBtn" type="button" disabled>检查已保存连接 · Recheck</button>
+        <p id="accountPairStatus" role="status" aria-live="polite">登录身份适配器仍待验证，配对后不会启用自动执行。</p>
+      </details>
       <p class="caption">Session capture</p>
       <section class="card">
         <div class="row" id="r-tab">

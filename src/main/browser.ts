@@ -39,6 +39,10 @@ export async function isPreferredBrowserRunning(
 }
 
 export interface PreferredBrowserOpenOptions {
+  /** Main-process managed account profile. Never obtained from a page request. */
+  profileDirectory?: string;
+  /** Validated existing profile basename within profileDirectory. */
+  profileName?: string;
   /** Defaults to the saved ChatGPT browser choice. */
   browser?: ChatBrowser;
   /** Start the owned helper without activating its Windows startup window. */
@@ -218,10 +222,13 @@ export async function openInPreferredBrowser(
   const selected = options.browser ?? getConfig().ui.chatBrowser ?? 'chrome';
   const label = selected === 'edge' ? 'Microsoft Edge' : selected === 'brave' ? 'Brave Browser' : 'Google Chrome / Chromium';
   const bounds = browserWindowBounds();
+  if (options.profileName && (!options.profileDirectory || !/^(?:Default|Profile [1-9][0-9]{0,5})$/.test(options.profileName))) throw new Error('Invalid browser profile');
   // These switches only affect a newly started Chrome process; handing a URL to an
   // existing instance cannot change its policy. Memory Saver exclusions alone do not
   // prevent background timer/renderer throttling of long-running orchestration tabs.
   const args = [
+    ...(options.profileDirectory ? [`--user-data-dir=${options.profileDirectory}`] : []),
+    ...(options.profileName ? [`--profile-directory=${options.profileName}`] : []),
     ...(platform === 'win32' ? ['--disable-renderer-backgrounding', '--disable-background-timer-throttling'] : []),
     ...(options.backgroundStartup ? [`--window-size=${bounds.width},${bounds.height}`] : []),
     url

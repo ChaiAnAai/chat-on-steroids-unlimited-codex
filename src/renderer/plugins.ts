@@ -1,20 +1,32 @@
 import { ui, t } from './i18n.js';
 import type { AppState } from '../shared/types.js';
 import type { SettingsPatch } from '../preload/index.js';
-import type { PluginSnapshot, PluginView, PluginCatalogEntry, PluginSource } from '../shared/plugins.js';
-import { $, el, run, toast } from './dom.js';
+import type { PluginSnapshot, PluginView, PluginCatalogEntry, PluginSource, PluginRegistryEntry } from '../shared/plugins.js';
+import { mountPluginMarketplace } from './plugin-marketplace.js';
+import { mcpLogo, originalDescription, purposeText } from './mcp-presentation.js';
+import { pluginFieldLabel, pluginFieldHint, pluginToolPurpose } from './plugin-copy.js';
+import { $, el, run, toast, feedback } from './dom.js';
 
 let snapshot: PluginSnapshot = { plugins: [], catalog: [], schemaRevision: 0 };
 let epoch = 0;
 let appState: AppState | null = null;
 let applyAppState: (next: AppState) => void = () => {};
+let marketplace: ReturnType<typeof mountPluginMarketplace> | undefined;
 const artwork = import.meta.glob('./plugin-icons/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 function button(label: string | (() => string), action: () => void | Promise<void>, primary = false): HTMLButtonElement {
   const node = el('button', `btn${primary ? ' btn-solid' : ''}`, label) as HTMLButtonElement;
   node.type = 'button';
   node.addEventListener('click', async () => {
     node.disabled = true;
-    try { await action(); } catch (error) { toast(error instanceof Error ? error.message : 'Plugin operation failed'); }
+    const owner = node.closest<HTMLElement>('.plugin-dialog-body, .plugin-card');
+    try { await action(); } catch (error) {
+      const message = error instanceof Error ? error.message : t('Plugin operation failed');
+      if (owner?.isConnected) {
+        let hint = owner.querySelector<HTMLElement>(':scope > .operation-feedback');
+        if (!hint) { hint = el('div', 'operation-feedback'); owner.append(hint); }
+        feedback(hint, message, 'error');
+      } else toast(message, 'error');
+    }
     finally { node.disabled = false; }
   });
   return node;
@@ -31,11 +43,12 @@ function field(parent: HTMLElement, label: string | (() => string), value = '', 
 }
 function dialog(title: string | (() => string)): { box: HTMLDialogElement; body: HTMLElement } {
   document.querySelector('#pluginDialog')?.remove();
+  const opener = document.activeElement as HTMLElement | null;
   const box = document.createElement('dialog'); box.id = 'pluginDialog'; box.className = 'plugin-dialog';
   const head = el('div', 'plugin-dialog-head'); const heading = el('h2', '', title); heading.id = 'pluginDialogTitle';
   box.setAttribute('aria-labelledby', heading.id); head.append(heading, button(() => t("Close"), () => box.close()));
   const body = el('div', 'plugin-dialog-body'); box.append(head, body);
-  box.addEventListener('close', () => box.remove()); document.body.append(box); box.showModal(); return { box, body };
+  box.addEventListener('close', () => { box.remove(); if (opener?.isConnected) opener.focus(); }); document.body.append(box); box.showModal(); return { box, body };
 }
 async function mutate(work: ReturnType<typeof window.api.pluginsSnapshot>, notify = true): Promise<boolean> {
   const own = ++epoch; const result = await run(work);
@@ -44,7 +57,14 @@ async function mutate(work: ReturnType<typeof window.api.pluginsSnapshot>, notif
   if (notify) toast(t("Plugin settings saved. Refresh the Chat On Steroids Plugins connector in ChatGPT to update its tools."));
   return true;
 }
-export async function refreshPlugins(): Promise<void> { await mutate(window.api.pluginsSnapshot(), false); }
+export async function refreshPlugins(): Promise<void> {
+  const button = $<HTMLButtonElement>('pluginsRefresh');
+  if (button.disabled) return;
+  button.disabled = true; button.setAttribute('aria-busy', 'true');
+  ui(button, 'textContent', () => t('Checking…'));
+  try { await mutate(window.api.pluginsSnapshot(), false); }
+  finally { button.disabled = false; button.removeAttribute('aria-busy'); ui(button, 'textContent', () => t('Check local status')); }
+}
 export function applyPluginsState(next: AppState): void {
   appState = next;
   const surface = next.status.surfaces.find((item) => item.id === 'plugins');
@@ -113,6 +133,7 @@ function showConnection(): void {
   applyPluginsState(appState);
 }
 function renderInstalled(): void {
+  marketplace?.setInstalled(snapshot.plugins);
   const list = $('pluginsInstalled');
   list.replaceChildren(); ui($('pluginsCount'), 'textContent', () => t("{0} installed", [snapshot.plugins.length]));
   const query = $<HTMLInputElement>('pluginsSearch').value.trim().toLowerCase();
@@ -122,12 +143,14 @@ function renderInstalled(): void {
   }
   for (const plugin of snapshot.plugins) {
     const recipe = snapshot.catalog.find(entry => entry.id === plugin.catalogId);
-    const description = recipe ? t(recipe.description) : (plugin.source.kind === 'remote' ? t("Your connected MCP server.") : t("Your local MCP integration."));
+    const presentation = {name:plugin.registry?.name??plugin.name,title:plugin.name,homepage:plugin.homepage,...plugin.registryInfo,version:plugin.registry?.version};
+    const description = recipe ? t(recipe.description) : plugin.registry ? purposeText(presentation) : (plugin.source.kind === 'remote' ? t("Your connected MCP server.") : t("Your local MCP integration."));
     if (!matches(plugin.name, description)) continue;
     const card = el('article', 'plugin-card');
     const open = button('', () => showPlugin(plugin)); open.className = 'plugin-entry';
     const title = el('div', 'plugin-card-title');
     title.append(el('h2', '', plugin.name));
+    title.append(el('p','muted',()=>recipe?t(recipe.description):plugin.registry?purposeText(presentation):description));
     ui(open, 'aria-label', () => t("Open {0}", [plugin.name]));
     const status = () => plugin.status === 'error' ? t("Needs attention") : plugin.status === 'needs-auth' ? t("Sign in needed") : plugin.status === 'authenticating' ? t("Signing in…") : plugin.status === 'ready' && plugin.tools.length ? t("Ready") : plugin.status === 'ready' ? t("Connected · no tools") : plugin.status === 'connecting' ? t("Connecting…") : plugin.status === 'disabled' ? t("Disabled") : t("Check connection");
     const count = plugin.tools.filter(tool => tool.enabled).length;
@@ -135,13 +158,21 @@ function renderInstalled(): void {
     foot.append(el('span', `pill${plugin.status === 'ready' && plugin.tools.length ? ' is-live' : plugin.status === 'error' ? ' is-error' : ''}`, status));
     if (plugin.error) foot.append(el('span', 'plugin-card-error', plugin.error));
     foot.append(el('span', 'plugin-tool-count', () => t(count === 1 ? '{0} tool enabled' : '{0} tools enabled', [count])));
-    title.append(foot); open.append(art(recipe?.icon ?? plugin.catalogId ?? 'custom'), title);
+    title.append(foot); open.append(plugin.registry?mcpLogo(presentation):art(recipe?.icon ?? plugin.catalogId ?? 'custom'), title);
     const menu = document.createElement('details'); menu.className = 'plugin-menu';
     const summary = el('summary', '', '•••'); ui(summary, 'aria-label', () => t("Actions for {0}", [plugin.name]));
     const actions = el('div', 'plugin-menu-actions');
-    actions.append(button(() => plugin.enabled ? t("Disable") : t("Enable"), async () => { await mutate(window.api.pluginsSetEnabled(plugin.id, !plugin.enabled)); }), button(() => t("Configure"), () => showConfigure(plugin)), button(() => t("Restart"), async () => { await mutate(window.api.pluginsRestart(plugin.id)); }), button(() => t("Update"), async () => { await mutate(window.api.pluginsUpdate(plugin.id)); }));
+    actions.append(button(() => t("Restart"), async () => { await mutate(window.api.pluginsRestart(plugin.id)); }), button(() => t("Update"), async () => { await mutate(window.api.pluginsUpdate(plugin.id)); }));
     const uninstall = button(() => t("Uninstall"), () => showUninstall(plugin)); uninstall.classList.add('plugin-destructive'); actions.append(uninstall);
-    menu.append(summary, actions); card.append(open, menu);
+    menu.append(summary, actions);
+    const quick = el('div', 'plugin-quick-actions');
+    quick.append(button(() => t('Configure'), () => showConfigure(plugin)),
+      button(() => plugin.enabled ? t('Disable') : t('Enable'), async () => { await mutate(window.api.pluginsSetEnabled(plugin.id, !plugin.enabled)); }));
+    const missingConfiguration = (plugin.fields ?? recipe?.fields ?? []).some(field => field.required && (field.secret ? !plugin.credentialKeys.includes(field.key) : !plugin.config[field.key]?.trim()));
+    const availability = el('p', 'plugin-availability', () => plugin.status === 'ready' && plugin.tools.length
+      ? t('Local tools ready · ChatGPT refresh is separate') : t('Local connection is not ready'));
+    const configuration = el('p', 'plugin-availability', () => missingConfiguration ? t('Configuration required') : plugin.status === 'needs-auth' ? t('Sign in needed') : t('Configuration saved'));
+    card.append(open, menu, configuration, availability, quick);
     list.append(card);
   }
   if (snapshot.plugins.length && !list.children.length) list.append(el('p', 'plugin-no-results muted', () => t("No installed plugins match your search.")));
@@ -173,9 +204,9 @@ function renderCatalog(parent: HTMLElement, query = ''): void {
 }
 function renderPluginTools(parent: HTMLElement, plugin: PluginView): void {
     const published = plugin.tools.filter(tool => tool.published).length;
-    const publication = plugin.tools.some(tool => tool.published !== undefined) ? t(" · {0} available in ChatGPT", [published]) : '';
+    const publication = plugin.tools.some(tool => tool.published !== undefined) ? t(" · {0} exposed by the local connector", [published]) : '';
     parent.replaceChildren();
-    if (plugin.status === 'needs-auth' || plugin.status === 'authenticating') {
+    if (plugin.source.auth === 'oauth' && (plugin.status === 'needs-auth' || plugin.status === 'authenticating')) {
       const auth = el('div', 'plugin-auth');
       auth.append(el('p', '', () => plugin.status === 'authenticating' ? t("Finish signing in through your browser.") : t("Sign in to {0} to connect your account.", [plugin.name])));
       auth.append(plugin.status === 'authenticating'
@@ -183,13 +214,21 @@ function renderPluginTools(parent: HTMLElement, plugin: PluginView): void {
         : button(() => t("Sign in"), async () => { await mutate(window.api.pluginsAuthenticate(plugin.id), false); }, true));
       parent.append(auth);
     }
+    if(plugin.source.kind==='remote'&&!plugin.source.auth&&!plugin.credentialKeys.length&&(plugin.status==='error'||plugin.status==='needs-auth')) {
+      parent.append(el('p','muted',()=>t('If this service supports browser login, authorize it here. API-key services use Configure.')),
+        button(()=>t('Sign in through browser'),async()=>{
+          if(await mutate(window.api.pluginsConfigure(plugin.id,{source:{...plugin.source,auth:'oauth'}}),false))
+            await mutate(window.api.pluginsAuthenticate(plugin.id),false);
+        },true));
+    }
     parent.append(el('h3', '', () => t("Tools")), el('p', 'plugin-tools-summary', () => t("{0}/{1} enabled{2} · This plugin only · Refresh ChatGPT after changes", [plugin.tools.filter(tool => tool.enabled).length, plugin.tools.length, publication])));
     if (plugin.error) parent.append(el('p', 'plugin-error', plugin.error));
     const tools = el('div', 'plugin-tools');
     for (const tool of plugin.tools) {
       const row = el('label', 'plugin-tool'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = tool.enabled; checkbox.disabled = !plugin.enabled;
       checkbox.addEventListener('change', async () => { checkbox.disabled = true; if (!await mutate(window.api.pluginsSetToolEnabled(plugin.id, tool.name, checkbox.checked))) { checkbox.checked = tool.enabled; checkbox.disabled = !plugin.enabled; } });
-      const text = el('span'); text.append(el('b', '', tool.name), el('small', 'muted', tool.description || tool.exposedName));
+      const text = el('span'); text.append(el('b', '', tool.name), el('small', 'muted', () => pluginToolPurpose(tool)));
+      if (tool.description) { const original = document.createElement('details'); original.append(el('summary', '', () => t('Publisher tool description')), el('p', 'muted', tool.description)); text.append(original); }
       if (tool.enabled && tool.published === false) text.append(el('small', 'muted', () => tool.exposureError ?? t("Not available in ChatGPT. Check this plugin’s connection.")));
       row.append(checkbox, text); tools.append(row);
     }
@@ -201,8 +240,10 @@ function showPlugin(plugin: PluginView): void {
   const hero = el('div', 'plugin-detail-hero');
   const intro = el('div', 'plugin-detail-intro');
   const configure = button(() => t("Configure Plugin"), () => showConfigure(plugin), true); configure.classList.add('plugin-configure');
-  intro.append(el('p', '', () => recipe ? t(recipe.description) : t("Your own MCP server, available in your conversations.")), configure);
-  hero.append(art(recipe?.icon ?? plugin.catalogId ?? 'custom'), intro); body.append(hero);
+  const presentation={name:plugin.registry?.name??plugin.name,title:plugin.name,homepage:plugin.homepage,...plugin.registryInfo,version:plugin.registry?.version};
+  intro.append(el('p', '', () => recipe ? t(recipe.description) : plugin.registry?purposeText(presentation):t("Your own MCP server, available in your conversations.")), configure);
+  hero.append(plugin.registry?mcpLogo(presentation):art(recipe?.icon ?? plugin.catalogId ?? 'custom'), intro); body.append(hero);
+  if(plugin.registry)body.append(originalDescription(presentation));
   const tools = el('section', 'plugin-detail-tools'); tools.dataset.pluginDetail = plugin.id; renderPluginTools(tools, plugin); body.append(tools);
   const about = document.createElement('details'); about.className = 'plugin-about'; about.append(el('summary', '', () => t("About this plugin")));
   about.append(el('p', 'plugin-source', plugin.source.url ?? plugin.source.package ?? plugin.source.command ?? plugin.source.kind), el('p', 'muted', () => `${plugin.version || t("Custom version")} · ${plugin.license || t("License not supplied")}`), el('p', '', () => t("Runs while installed and enabled, including after reopening the app. Disable or uninstall it to stop its connection. Restart reconnects and refreshes its tools.")));
@@ -217,7 +258,7 @@ function showConfigure(plugin: PluginView): void {
   const { box, body } = dialog(() => t("Configure {0}", [plugin.name])); const config = new Map<string, HTMLInputElement>(); const secrets = new Map<string, HTMLInputElement>();
   const name = field(body, () => t("Display name"), plugin.name);
   for (const item of plugin.fields ?? snapshot.catalog.find((entry) => entry.id === plugin.catalogId)?.fields ?? [])
-    (item.secret ? secrets : config).set(item.key, field(body, item.label, item.secret ? '' : plugin.config[item.key] ?? '', item.secret, () => item.secret ? t("Leave empty to keep the saved credential.") : item.placeholder ?? ''));
+    (item.secret ? secrets : config).set(item.key, field(body, () => pluginFieldLabel(item), item.secret ? '' : plugin.config[item.key] ?? '', item.secret, () => pluginFieldHint(item, true)));
   for (const [key, value] of Object.entries(plugin.config)) if (!config.has(key)) config.set(key, field(body, key, value));
   for (const key of plugin.credentialKeys) if (!secrets.has(key)) secrets.set(key, field(body, key, '', true, () => t("Leave empty to keep the saved credential.")));
   const source = field(body, () => t("Server configuration (JSON)"), JSON.stringify(plugin.source), false, () => t("Keep credentials in the secure fields, not in command arguments or URLs."));
@@ -236,10 +277,75 @@ function showConfigure(plugin: PluginView): void {
 }
 function showCatalog(): void {
   const { body } = dialog(() => t("Add a plugin")); body.append(el('p', 'muted', () => t("Independent integrations, one shared connector. Review each plugin’s access and setup before installing.")));
+  body.append(button(() => t('Search the online MCP marketplace'), openMarketplace, true));
   const grid = el('div', 'plugin-catalog'); grid.dataset.pluginCatalog = ''; renderCatalog(grid);
   body.append(grid, el('h3', '', () => t("Bring your own server"))); const custom = el('div', 'plugin-actions');
   custom.append(button(() => t("Import MCPB bundle"), async () => { const path = await run(window.api.pluginsImportBundle()); if (path) showCustom('mcpb', path); }), button(() => t("npm / Python / executable"), () => showCustom('npm')), button(() => t("Remote MCP URL"), () => showCustom('remote')), button(() => t("GitHub repository"), () => showCustom('github')));
   body.append(custom, el('p', 'hint', () => t("Local plugins run as your OS user and do not inherit CoS approved-folder restrictions. Install only code you trust.")));
+}
+function openMarketplace(): void {
+  document.querySelector<HTMLDialogElement>('#pluginDialog')?.close();
+  $('pluginMarketplace').scrollIntoView({block:'start'});
+  $('pluginMarketplace').querySelector<HTMLInputElement>('input')?.focus({preventScroll:true});
+}
+function showRegistryEntry(entry: PluginRegistryEntry): void {
+  const {box,body}=dialog(entry.title);
+  const hero=el('div','plugin-detail-hero');hero.append(mcpLogo(entry),el('p','marketplace-purpose',()=>purposeText(entry)));body.append(hero,originalDescription(entry),el('p','marketplace-identity',`${entry.name} · ${entry.version}`));
+  if(entry.homepage)body.append(button(()=>t('Open project & setup guide'),async()=>{await run(window.api.openLink(entry.homepage!));}));
+  if(!entry.options.length) {
+    body.append(el('p','operation-feedback',()=>t('This listing needs manual setup. Open its guide, then add its MCP URL, package or bundle.')));
+    for(const reason of new Set(entry.unsupported))body.append(el('p','muted',()=>t(reason)));
+    body.append(button(()=>t('Remote MCP URL'),()=>showCustom('remote')),button(()=>t('npm / Python / executable'),()=>showCustom('npm')));return;
+  }
+  const label=el('label','plugin-field');label.append(el('span','',()=>t('Installation method')));
+  const method=document.createElement('select');label.append(method);body.append(label);
+  for(const option of entry.options){const item=document.createElement('option');item.value=option.id;item.textContent=option.source.kind==='remote'?`${t('Remote MCP URL')} · ${new URL(option.source.url!).hostname}`:`${option.source.kind} · ${option.source.package}@${option.source.version}`;method.append(item);}
+  const content=el('div','marketplace-setup');body.append(content);
+  const paint=()=>{
+    content.replaceChildren(); const option=entry.options.find(o=>o.id===method.value)!;
+    const existing=snapshot.plugins.find(p=>p.registry?.name===entry.name && p.registry.optionId===option.id || p.source.kind===option.source.kind && (p.source.kind==='remote'?p.source.url===option.source.url:p.source.package===option.source.package));
+    if(existing){content.append(el('p','muted',()=>t('This MCP is already installed. Open its existing connection.')),button(()=>t('Open {0}',[existing.name]),()=>showPlugin(existing),true));return;}
+    const values=new Map<string,HTMLInputElement>();
+    for(const item of option.fields){const input=field(content,()=>pluginFieldLabel(item),item.secret?'':option.defaults[item.key]??'',item.secret,()=>pluginFieldHint(item));input.required=!!item.required;values.set(item.key,input);}
+    let authentication:HTMLSelectElement|undefined;
+    if(option.source.kind==='remote'&&!option.fields.length){const wrap=el('label','plugin-field');wrap.append(el('span','',()=>t('Authentication')));authentication=document.createElement('select');for(const [value,title] of [['none','Connect without login'],['oauth','Sign in through browser']]){const item=document.createElement('option');item.value=value!;ui(item,'textContent',()=>t(title!));authentication.append(item);}wrap.append(authentication);content.append(wrap);}
+    content.append(el('p','hint',()=>option.source.kind==='remote'?t('A connection is ready only after tool discovery. Browser sign-in is manual; opening a page is not a successful login.'):t('Installation downloads and runs publisher code as your OS user. Node.js or Python with uv must be installed; missing runtimes are reported.')));
+    const state=el('div','operation-feedback');state.hidden=true;content.append(state);
+    let installing = false, checkGeneration = 0;
+    const install=button(()=>t('Install and connect'),async()=>{
+      if (installing) return;
+      for(const item of option.fields)if(item.required&&!values.get(item.key)!.value.trim()){values.get(item.key)!.focus();feedback(state,t('{0} is required.',[item.label]),'error');return;}
+      const config:Record<string,string>={},credentials:Record<string,string>={};
+      for(const item of option.fields){const value=values.get(item.key)!.value;if(value)(item.secret?credentials:config)[item.key]=value;}
+      installing = true; checkGeneration++; recheck.disabled = true;
+      method.disabled=true;feedback(state,t('Installing and checking connection…'),'busy');
+      try {
+        const result=await window.api.pluginsInstall({registry:{name:entry.name,version:entry.version,optionId:option.id,authentication:authentication?.value==='oauth'?'oauth':'none'},config,credentials});
+        if(!result.ok){if(box.isConnected)feedback(state,t(result.error),'error');return;}
+        snapshot=result.data;renderInstalled();
+        if(box.isConnected){const installed=snapshot.plugins.find(p=>p.registry?.name===entry.name&&p.registry.optionId===option.id);if(installed)showPlugin(installed);}
+      } catch {if(box.isConnected)feedback(state,t('Installation could not finish. Your settings are retained; check the connection and try again.'),'error');}
+      finally{installing = false; recheck.disabled = false; method.disabled=false;}
+    },true);content.append(install);
+    const checkRuntime = async () => {
+      if (installing) return;
+      const own = ++checkGeneration;
+      install.disabled = true; feedback(state, t('Checking installation requirements…'), 'busy');
+      const kind = option.source.kind;
+      if (kind !== 'npm' && kind !== 'python' && kind !== 'remote') { feedback(state, t('Review this installation method manually.'), 'error'); return; }
+      try {
+        const result = await window.api.pluginsPreflight(kind);
+        if (!install.isConnected || own !== checkGeneration) return;
+        if (!result.ok) throw new Error(result.error);
+        install.disabled = !result.data.ready;
+        if (result.data.ready) feedback(state, kind === 'remote' ? t('No local runtime required. Provider authorization is checked when connecting.') : t('Runtime found: {0}. Connection still needs verification.', [result.data.runtime]), 'success');
+        else feedback(state, t('Install {0}, then recheck. Your configuration is retained.', [result.data.runtime]), 'error');
+      } catch { if (install.isConnected && own === checkGeneration) feedback(state, t('Could not check installation requirements. Recheck to retry.'), 'error'); }
+    };
+    const recheck = button(() => t('Recheck requirements'), checkRuntime);
+    content.append(recheck); void checkRuntime();
+  };
+  method.addEventListener('change',paint);paint();
 }
 function showRecipe(recipe: PluginCatalogEntry): void {
   const { box, body } = dialog(() => t("Set up {0}", [recipe.name])); const header = el('div', 'plugin-card-head'); header.append(art(recipe.icon), el('p', '', () => t(recipe.description))); body.append(header);
@@ -251,7 +357,7 @@ function showRecipe(recipe: PluginCatalogEntry): void {
   const setup = document.createElement('details'); setup.className = 'plugin-about'; setup.append(el('summary', '', () => t("Setup requirements")));
   const steps = el('ol', 'plugin-steps'); for (const step of recipe.instructions) steps.append(el('li', '', () => t(step))); setup.append(steps, button(() => t("Open project & setup guide"), async () => { await run(window.api.openLink(recipe.homepage)); })); body.append(setup);
   const values = new Map<string, HTMLInputElement>();
-  for (const item of recipe.fields) { const input = field(body, item.label, '', item.secret, item.placeholder); input.required = !!item.required; values.set(item.key, input); }
+  for (const item of recipe.fields) { const input = field(body, () => pluginFieldLabel(item), '', item.secret, () => pluginFieldHint(item)); input.required = !!item.required; values.set(item.key, input); }
   const remote = recipe.source.kind === 'remote';
   body.append(el('p', 'hint', () => remote
     ? t("{0}. Connect your account through the provider. Its plan and usage limits apply.", [recipe.license])
@@ -271,6 +377,9 @@ function showCustom(kind: PluginSource['kind'], path = ''): void {
   const label = el('label', 'plugin-field'); label.append(el('span', '', () => t("Server type"))); const select = document.createElement('select');
   for (const [value, text] of [['npm',t("npm package")],['python',t("Python package (uv)")],['command',t("Custom executable")],['remote',t("Remote Streamable HTTP")],['github',t("GitHub repository")],['mcpb',t("MCPB bundle")]]) { const option = document.createElement('option'); option.value = value!; option.textContent = text!; select.append(option); }
   select.value = kind; label.append(select); body.append(label);
+  const authLabel=el('label','plugin-field');authLabel.append(el('span','',()=>t('Authentication')));
+  const auth=document.createElement('select');for(const [value,title]of [['none','Connect without login'],['oauth','Sign in through browser']]){const option=document.createElement('option');option.value=value!;ui(option,'textContent',()=>t(title!));auth.append(option);}authLabel.append(auth);body.append(authLabel);
+  const updateAuth=()=>{authLabel.hidden=select.value!=='remote';};select.addEventListener('change',updateAuth);updateAuth();
   const location = field(body, () => t("Package, executable, URL or bundle path"), path); const version = field(body, () => t("Version (npm / Python)"), '', false, () => t("Pin a published version for reproducible installation."));
   const args = field(body, () => t("Arguments (JSON array)"), '[]', false, () => t("Example: [\"--port\", \"9876\"]. Passed directly, without a shell."));
   const key = field(body, () => t("Credential name (optional)"), '', false, () => t("An environment variable for local servers, or an HTTP header such as Authorization.")); const credential = field(body, () => t("Credential value"), '', true);
@@ -278,12 +387,15 @@ function showCustom(kind: PluginSource['kind'], path = ''): void {
     const selected = select.value as PluginSource['kind']; const value = location.value.trim(); if (!value) throw new Error(t("Enter the server location first."));
     const parsed: unknown = JSON.parse(args.value); if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) throw new Error(t("Arguments must be a JSON array of strings."));
     const source: PluginSource = { kind: selected, args: parsed };
+    if(selected==='remote'&&auth.value==='oauth')source.auth='oauth';
     if (selected === 'remote' || selected === 'github') source.url = value; else if (selected === 'mcpb') source.path = value; else if (selected === 'command') source.command = value; else { source.package = value; if (version.value.trim()) source.version = version.value.trim(); }
     if (await mutate(window.api.pluginsInstall({ name: name.value, source, credentials: key.value.trim() && credential.value ? { [key.value.trim()]: credential.value } : {} }))) box.close();
   }, true));
 }
 export function initPlugins(onState: (next: AppState) => void = () => {}): void {
   applyAppState = onState;
+  marketplace=mountPluginMarketplace($('pluginMarketplace'),showRegistryEntry);
+  $('pluginsAdd').before(button(()=>t('Online MCP marketplace'),openMarketplace));
   $('pluginsAdd').addEventListener('click', showCatalog); $('pluginsRefresh').addEventListener('click', () => void refreshPlugins());
   $('pluginsSearch').addEventListener('input', renderInstalled);
   $('pluginsSetupLink').addEventListener('click', showConnection);

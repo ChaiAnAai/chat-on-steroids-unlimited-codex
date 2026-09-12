@@ -22,8 +22,10 @@ the code currently does it. Known implementation gaps are collected in §21 inst
 mixed into the happy path as features.
 
 Source alignment: **2026-09-10**, including current working-tree changes. App/extension **2.0.9**,
-bridge protocol **13** in the checked declarations (`package.json`, `src/main/version.ts`,
-`extension/manifest.json`). This does not prove release, installation or live Chrome behavior.
+installed baseline bridge protocol **13**. The isolated accounts-preview tree now declares
+protocol **14** in app and extension. Its account registry, scoped bridge/MCP/outbox guards and
+pairing guide are implemented, but task activation remains unavailable until identity, remaining
+routing and real parallel acceptance are complete. This does not prove release or installation.
 
 ## 1. What the whole app is meant to do
 
@@ -93,12 +95,12 @@ losing the project, history, workers or queued instructions when a chat grows to
   across navigation and MV3 suspension. Startup, a wake socket and a maintenance alarm are not
   independent permission to open a tab. Missing receipts and user-closed elected tabs do not
   create another opening attempt. Transfer opening authority when it is handed out.
-- Waiting chats and sleeping workers retain their durable history and identity, not an
-  indefinite browser tab. Settled app-owned pages become eligible for New Chat reuse after
-  two minutes without work and automatic closure after five. Fresh document/draft/generation
-  checks remain mandatory; selected Chrome tabs veto idle closure, and pins veto closure and
-  New Chat reuse. Terminal, blocked, cancelled, superseded and duplicate cleanup retains its
-  separate authority. Unknown/personal ownership, live work and pending delivery are not idle.
+- Waiting chats, sleeping workers and duplicate user tabs remain open. Settled app-owned pages
+  become eligible for explicit New Chat input reuse after two minutes without work; idle time
+  and duplicate URLs never authorize automatic closure. Retirement requires an explicit
+  terminal/blocked/cancelled/superseded operation and fresh document/draft/generation proof.
+  Selected and pinned tabs veto maintenance closure. Pins also veto New Chat reuse.
+  Unknown/personal ownership, live work and pending delivery are not idle.
 - Unknown identity fails closed where a wrong choice could mutate, attribute or message the
   wrong owner. Presentation can degrade visibly; execution must not guess.
 - Every async result proves its original owner and epoch still apply. A → B → A navigation
@@ -149,6 +151,7 @@ The renderer has no direct filesystem, command, secret or generic main-process a
 | Terminal | Durable local session principal → process session id. |
 | Renderer | Selected session/draft key + load generation. |
 | Connection | Endpoint/tunnel generation. |
+| Browser account | Main-secret-authenticated account + connection version; immutable session owner and frozen outbox account. |
 | Desktop input | Capture frame/accessibility ref + target geometry + helper generation. |
 
 When four features break together, follow one concrete identity through these boundaries. Find
@@ -213,6 +216,7 @@ Paths in this section are repository-relative. Most mechanisms have `main`, `sha
 | --- | --- |
 | App shell | `src/main/index.ts`, `window-lifecycle.ts`, `window-layout.ts`, `window-icon.ts`, `tray-image.ts`, `shutdown.ts`: bootstrap, activation, geometry, tray and bounded exit. |
 | Config/security | `src/main/config.ts`, `platform.ts`, `secrets.ts`, `sandbox.ts`, `redaction.ts`; `src/shared/types.ts`, `capabilities.ts`: permission and host projection, secrets, approved paths. |
+| Accounts | `accounts.ts`, `account-management.ts`, `account-context.ts`, `account-ownership.ts`, `bridge-account-scope.ts`, `mcp/account-guard.ts`: durable identity, main-only confirmation, scoped transport and original outbox admission; unknown identity refuses work. `session/usage.ts` persists account quota observations without restoring send authority. |
 | Publication | `src/main/connection.ts`, `mcp/server.ts`, `mcp/surfaces.ts`, `tunnel/{index,health,locate}.ts`, `diagnostics.ts`: endpoint/tunnel generation and truthful status. |
 | Tool dispatch | `src/main/mcp/{tools,kernel,inbound,call-context,tool-declarations}.ts`, `tools-core.ts`, `tools-desktop.ts`, `tools-plugins.ts`: declarations, exact caller, live guards and evidence. |
 | Code composition | `src/main/mcp/code-mode-{tool,runtime,worker}.ts`: surface-scoped `exec`, QuickJS admission, limits and explicit emissions. |
@@ -486,6 +490,16 @@ escapes, live revocation during an await, and preserving an unrelated user's new
 
 ## 9. Projects, workspaces and project instructions
 
+The preview skill library is owned by `src/main/skills/{library,runtime,builtins}.ts` and
+the fixed `skills:manage` IPC. Its catalog owns project enablement and selected immutable
+content digests; it does not own task state. Local folder imports are reviewed before copying,
+reject external links/escape, never execute scripts, and retain the previous version for rollback.
+The existing Core `read` tool accepts one exact `/skills/name/digest/file` supplied by the app,
+requires read permission, a current caller and project enablement, and checks stored integrity.
+Other filesystem operations do not gain access to this reserved namespace. Preparing a skill
+only appends to the current draft; sending remains explicit. Dependency readiness and real
+model use still need acceptance; a library import is not proof of usable tools.
+
 **Intent:** a chat consistently works in its selected local folder, and workers/resumed chats
 retain that choice. Sidebar organization must not destroy work or grant access.
 
@@ -604,7 +618,11 @@ or duplicating a message after an ambiguous browser outcome. One outbox owns all
 The desktop composer uses native CSS content sizing, bounded at 220px. Layout owns its
 height across draft changes, hidden panels and width changes; do not persist a measured
 `scrollHeight` as an inline height. Empty and fitting input must not overflow; longer text
-remains scrollable at the cap. `scripts/verify-composer-layout.cjs` checks real Electron layout.
+remains scrollable at the cap. Text focus is drawn once on the outer composer surface;
+toolbar controls and other form fields retain their own keyboard focus indicators. Empty
+input spacing belongs to the grid gap, not an additional textarea padding row.
+`scripts/verify-composer-layout.cjs` checks native sizing; `scripts/review-composer-focus.cjs`
+checks production packaged focus, long drafts and two themes across supported window sizes.
 
 `session/start-input.ts` brings up the existing connection/bridge owners for an explicit send,
 waits for actual connector readiness, then calls `input.ts`. Pre-publication cancellation owns
@@ -912,6 +930,14 @@ desktop-input authorization run when Send becomes ready, followed by a fresh loc
 Goal preparation/rollback reuses the existing exact composer draft lease; identical text in a
 replacement editor or a user's intervening edit never grants cleanup authority.
 
+Native thought activity uses exact rendered thought-item identity and page-model order.
+Public busy captions and rendered expanded Markdown summaries flow through `page_tool.detail`
+(8192 characters, bounded with the scan), recorder revisions and desktop timeline. Hidden DOM
+and raw private thought payloads are excluded. Collapsing a native summary does not erase its
+previously observed text. Thought Markdown cannot decorate an unrelated final answer. Native
+feedback stays visible outside collapsed tool groups; same-length revisions repaint in place.
+Content recorder version 12 and background's expected version agree for update injection.
+
 ### Account-evaluated model selection
 
 `chat-models.ts` owns the app catalog and selection validation. The existing MAIN bridge reads
@@ -997,11 +1023,11 @@ eligibility from existing app ownership, settled turns or sleeping workers, work
 and pending input/automation/continuation protection. Page presence never resets that clock.
 After two quiet minutes an eligible ordinary/prime/sleeping-worker page can be used by the
 existing New Chat input election; personal and dedicated decision chats are not candidates.
-After five quiet minutes an unused app-owned page can close. Its durable history, worker
-report and revival identity survive. The extension keeps the selected page during idle
-cleanup, rechecks pins/selection/navigation after the page proof and refuses unread journals,
-drafts, attachments or generation. Explicit terminal cleanup retains its two-minute grace;
-superseded sources and duplicate documents keep their existing retirement rules.
+Idle pages and duplicate user tabs remain open; `idleCloseAfterMs` is null. The extension
+requires explicit retirement even if an older bridge sends idle close candidates. Retirement
+rechecks pins/selection/navigation after page proof and refuses unread journals, drafts,
+attachments or generation. Explicit terminal cleanup retains its two-minute grace;
+superseded source retirement keeps its exact-operation checks.
 
 ### Recovery policy
 
@@ -1175,7 +1201,7 @@ Broker mutations stage and durably publish the exact run object; async rollback 
 restore another family's state. Disable parks families; Clear deliberately discards the
 broker's retained history/fences. Dormant families are bounded (16 / seven days). Retirement
 and browser close are separate: a sleeping worker becomes eligible for page reuse after two
-quiet minutes and page closure after five (§14), while remaining available for revival by its
+quiet minutes (§14), while its tab stays open and the worker remains available for revival by its
 exact conversation id. Compact & Resume rebinds a prime within its
 family; it does not merge families or move a terminal process to another principal.
 
@@ -1266,7 +1292,11 @@ Pushes and async loads are scoped to selection/draft generation; a late load mus
 focused edits or a newer A → B → A view.
 
 The sidebar groups local projects/sessions, exposes worker state and retains deliberate width
-and expansion preferences. The chat keeps the current input queue/plan visible alongside a
+and expansion preferences. Below 900 CSS px, the existing navigation becomes a temporary
+drawer; resizing must not persist a collapsed state or overwrite preferred desktop width.
+The drawer makes the canvas inert and closes with Esc/backdrop/navigation, with focus restored
+to a visible entry. Management layouts respond to canvas width, navigation wraps, and short
+windows reduce chrome spacing without changing saved UI fonts or Electron zoom. The chat keeps the current input queue/plan visible alongside a
 paged transcript. Main owns durable mutation acknowledgements; renderer optimism is not a
 receipt. Native edit context menus respect the focused editable control and selection.
 
@@ -1284,10 +1314,27 @@ Tool result rendering preserves structured text/image/resource distinctions with
 App-owned external/local links cross their validated main-process route.
 
 English and Simplified Chinese are explicit UI translations (`i18n.ts`, `locales/zh-CN.json`),
-with the selected locale in `cos.ui.language`. Changing language repaints owned labels while
-retaining drafts/selections; never translate authored messages, provider text or file paths.
+with the selected locale in main `config.ui.language`; legacy `cos.ui.language` is migrated and
+removed after successful persistence. Changing language repaints owned labels and notifies
+mounted form controllers, including when the startup preference arrives after initial state.
+Retain drafts/selections and unsaved language choices; never translate authored messages,
+provider text or file paths. Setup has one sheet, one language selector and a compact readiness
+overview; detailed configuration remains expandable. A missing prerequisite makes the header
+action navigate to that step without attempting a connection. Connection IPC is single-flight,
+and failures stay beside the operation until the user retries.
 Authored prose uses automatic text direction; shell/code remain LTR with logical layout edges.
-Theme and layout preferences do not change backend authority.
+Theme and layout preferences do not change backend authority. `shared/appearance.ts` defines
+light/dark/system, accent, type sizes and density; main config backfills defaults and IPC merges
+appearance fields against the submitted base. `renderer/appearance.ts` previews pending choices,
+including unsaved failures, without another storage owner. `workspace.css` owns workspace tokens.
+`renderer/task-status.ts` projects the existing selected controls/queue/error evidence; automation
+is never running evidence. Send and Stop are independent; stop/cancel uses exact existing receipt
+and selection fences. `dom.ts` provides persistent operation-local errors. Settings snapshots and
+field feedback retain the latest requested edits until main acknowledges them. Execution details
+share the same projection and restore focus on deliberate close. The explicit `--ui-preview` launch
+uses separate user data and skips automatic browser discovery. `scripts/start-ui-preview.ps1`
+sets ephemeral bridge ports; `scripts/review-ui.cjs` uses simulated IPC and must never be cited as
+real ChatGPT delivery, stop, plugin startup or Windows DPI certification.
 
 `renderer/plugin-refresh-reminder.ts` owns the chat-header reminder to refresh plugins
 in ChatGPT. Its X stores only the acknowledged running `state.update.current` version in
@@ -1302,6 +1349,26 @@ refresh complete or starts a browser action.
 The optional Plugins connector proxies installed enabled MCP servers. `catalog.ts` describes
 reviewed entries; `installer.ts` owns installation/package materialization; `manager.ts` owns
 stdio/remote clients; `exposure.ts` owns accepted live tools; `oauth.ts` owns authorization.
+`plugins/registry.ts` reads the official public directory through a fixed HTTPS API, with
+bounded responses, coalesced requests and an hour cache. `renderer/plugin-marketplace.ts`
+owns explicit search, paging and stale-response fencing; browsing never starts a server.
+Registry installs re-fetch the selected exact name/version/option in main, reject overrides
+and duplicates, generate only supported fields and preserve registry provenance alongside
+the existing installation. Unknown templates/runtimes remain manual setup. Declared secret
+headers/environment fields use the existing secret store, including public Bearer prefixes.
+The generic remote URL form also supports explicit browser OAuth; login/handshake/tool
+discovery and ChatGPT publication remain separate acknowledgements. Smithery/Glama links
+open their external directories; they are not independent native API aggregators.
+Chinese marketplace purposes are presentation-only supplements in `shared/mcp-presentation.ts`:
+exact-description translations, a pinned MIT Chinese community index matched by exact repository,
+then explicitly labelled keyword categories. Uncovered entries retain their original text and an
+explicit browser translation action. Never replace protocol identities or claim a category is a
+translation. `plugins/registry-icon.ts` downloads declared related-origin raster logos through a
+DNS-pinned public IPv4 socket, with timeout/byte/pixel bounds and PNG normalization; only same-site
+HTTPS/www redirects (maximum two), no cookies, remote SVG or widened renderer CSP. Synthetic
+198.18/15 proxy DNS is independently resolved through bounded public DoH and still must pass
+public-address checks. Missing logos remain labelled category tiles. Main
+revalidates fixed registry name/version requests; renderer does not supply arbitrary image URLs.
 Local npm/Python/MCPB packages and remote endpoints have different setup needs. Editor plugins
 such as Blender also need the editor-side addon and a successful readiness probe.
 
@@ -1509,6 +1576,7 @@ stable `userData/extension`, never an ephemeral AppImage mount.
 | Build owner | Contract |
 | --- | --- |
 | `scripts/package.mjs` | Icons → bundle → explicit target resources/native staging → builder with publishing disabled. |
+| `promote-preview.mjs`, `start-ui-preview.ps1` | Explicit reviewed-package promotion to `preview-build.json`; launcher verifies every listed payload before starting that package, with no development/old-package fallback. Development has its own `start-ui-development.ps1`. |
 | `packaging-targets.mjs`, `packaging-versions.mjs` | Supported OS/arch vocabulary and pinned target checksums; fetchers share these authorities. |
 | `prepare-packaging-native.mjs` | Exact target node-pty/Sharp/tree-sitter from verified package material; host leftovers cannot win. |
 | `prepare-macos-desktop-helper.mjs` | Thin target Swift dylib + matching N-API addon; packaged in-process permission identity. |
@@ -1549,9 +1617,8 @@ These are source-level discrepancies checked for this map, not new live reproduc
 permission for an unsolicited rewrite. Recheck current code/tests before acting; another
 shared-tree change may already have addressed them.
 
-- **Startup opening:** `index.ts` still calls `startChatModelDiscovery(true)` on window show
-  when the catalog is unknown. Desired policy requires a concrete operation to own any new
-  browser document; app opening alone must not become a fallback opener.
+- **Startup opening rechecked 2026-09-13:** `index.ts` uses `startChatModelDiscovery(false)`.
+  Keep this non-opening behavior; earlier reports of the `true` startup call are obsolete.
 - **Repair handout vs action:** `/status` marks eligible repairs handed before extension tab
   query/action. The extension now has single-flight maintenance and the app checks current
   binding/block/Stop at handout, but no final atomic action claim closes cancellation after

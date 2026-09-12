@@ -5,6 +5,38 @@ import { initSidebarResize } from '../src/renderer/sidebar-resize.js';
 
 let dom: JSDOM;
 afterEach(() => { dom?.window.close(); vi.unstubAllGlobals(); });
+it('uses a temporary narrow-window drawer, preserves desktop preferences, and restores focus', async () => {
+  dom = new JSDOM(readFileSync(new URL('../src/renderer/index.html', import.meta.url), 'utf8'), { url: 'https://local.test' });
+  vi.stubGlobal('window', dom.window); vi.stubGlobal('document', dom.window.document); vi.stubGlobal('localStorage', dom.window.localStorage);
+  localStorage.setItem('chat-on-steroids.sidebar-width', '320');
+  const doc = dom.window.document, app = doc.querySelector<HTMLElement>('.app')!, sidebar = doc.getElementById('sidebar')!;
+  const resize = (width: number) => { Object.defineProperty(dom.window, 'innerWidth', { value: width, configurable: true }); dom.window.dispatchEvent(new dom.window.Event('resize')); };
+  initSidebarResize();
+  doc.getElementById('workspaceSettings')!.focus();
+  resize(690);
+  expect(app.dataset.sidebarMode).toBe('drawer'); expect(sidebar.inert).toBe(true);
+  expect(doc.activeElement?.id).toBe('sidebarToggle');
+  expect(localStorage.getItem('chat-on-steroids.sidebar-width.collapsed')).toBeNull();
+  doc.getElementById('sidebarToggle')!.click();
+  expect(sidebar.inert).toBe(false); expect(doc.querySelector('main')!.inert).toBe(true);
+  expect(sidebar.getAttribute('aria-modal')).toBe('true');
+  doc.getElementById('workspaceSettings')!.focus();
+  doc.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+  expect(sidebar.contains(doc.activeElement)).toBe(true);
+  doc.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape' }));
+  expect(sidebar.inert).toBe(true); expect(doc.querySelector('main')!.inert).toBe(false);
+  expect(doc.activeElement?.id).toBe('sidebarToggle');
+  doc.getElementById('sidebarToggle')!.click();
+  doc.getElementById('workspaceSettings')!.click(); await Promise.resolve();
+  expect(sidebar.inert).toBe(true); expect(doc.querySelector('main')!.inert).toBe(false);
+  resize(1400);
+  expect(app.dataset.sidebarMode).toBe('docked'); expect(sidebar.inert).toBe(false);
+  expect(app.style.getPropertyValue('--sidebar-width')).toBe('320px');
+  expect(localStorage.getItem('chat-on-steroids.sidebar-width')).toBe('320');
+  doc.getElementById('sidebarToggle')!.click(); // Explicit desktop collapse survives later resizes.
+  resize(600); resize(1400);
+  expect(sidebar.inert).toBe(true);
+});
 it('bounds dragging, releases capture, preserves width through collapse and smaller windows, and resets', () => {
   dom = new JSDOM(readFileSync(new URL('../src/renderer/index.html', import.meta.url), 'utf8'), { url: 'https://local.test' });
   vi.stubGlobal('window', dom.window); vi.stubGlobal('document', dom.window.document); vi.stubGlobal('localStorage', dom.window.localStorage);

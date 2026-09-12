@@ -73,10 +73,14 @@ function Get-AppCatalogIdentity($item) {
   $nativeId = ''; $targetPath = ''
   try { $value = $item.ExtendedProperty('System.AppUserModel.ID'); if ($value -is [string]) { $nativeId = $value } } catch { }
   try { $value = $item.ExtendedProperty('System.Link.TargetParsingPath'); if ($value -is [string]) { $targetPath = $value } } catch { }
-  if (!$targetPath -and [IO.Path]::IsPathRooted($launchId) -and $launchId.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) { $targetPath = $launchId }
-  if ($targetPath -and $targetPath.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase) -and [IO.Path]::IsPathRooted($targetPath)) {
-    try { $targetPath = [IO.Path]::GetFullPath($targetPath) } catch { $targetPath = '' }
-  } else { $targetPath = '' }
+  # Shell launch IDs are opaque identifiers, not necessarily legal filesystem paths.
+  # .NET Framework IsPathRooted throws for catalog IDs containing path-invalid characters.
+  try {
+    if (!$targetPath -and $launchId.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase) -and [IO.Path]::IsPathRooted($launchId)) { $targetPath = $launchId }
+    if ($targetPath -and $targetPath.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase) -and [IO.Path]::IsPathRooted($targetPath)) {
+      $targetPath = [IO.Path]::GetFullPath($targetPath)
+    } else { $targetPath = '' }
+  } catch { $targetPath = '' }
   $id = if ($nativeId) { $nativeId } elseif ($targetPath) { $targetPath.ToLowerInvariant() } else { $launchId }
   if ([string]::IsNullOrWhiteSpace($id) -or $id.Length -gt 2048) { return $null }
   $name = [string]$item.Name

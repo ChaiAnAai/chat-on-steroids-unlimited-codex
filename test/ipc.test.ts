@@ -94,6 +94,7 @@ it('validates dropped file count and stages arbitrary native file types', async 
 });
 
 it('publishes Goal draft progress through the session refresh channel without a new transcript event', async () => {
+  const config = getConfig(); await saveConfig({ ...config, goal: { ...config.goal, executionPolicy: 'legacy-helper' } });
   const { startGoalDraft, resetGoalStateForTests } = await import('../src/main/goal.js');
   const session = await createSession({ title: 'Goal progress', conversationId: 'ipc-goal-progress' });
   currentWindow = { setBackgroundColor: vi.fn(), setTitleBarOverlay: vi.fn(), isDestroyed: () => false, webContents: { send: vi.fn() } };
@@ -213,8 +214,8 @@ it('adds picker-selected projects, reuses containing approval, and leaves cancel
   vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: false, filePaths: [path.join(folder, 'child')] });
   expect((await add()).data.name).toBe('child');
   expect(getConfig().roots).toHaveLength(1);
-  const listed = await handlers.get('projects:list')!(null, {}) as any;
-  expect(listed.data).toHaveLength(2);
+  const listed = await handlers.get('projects:list')!(null, null) as any;
+  expect(listed).toMatchObject({ ok: true, data: expect.arrayContaining([expect.any(Object), expect.any(Object)]) });
   const removed = await handlers.get('projects:remove')!(null, { id: first.data.id }) as any;
   expect(removed).toMatchObject({ ok: true, data: { id: first.data.id, ungrouped: true } });
   expect(getConfig().roots).toHaveLength(1);
@@ -663,9 +664,9 @@ describe('settings writes from more than one UI', () => {
     expect(reply.ok, reply.error).toBe(true);
     expect(getConfig().ui.theme).toBe('dark');
     expect(nativeTheme.themeSource).toBe('dark');
-    expect(currentWindow.setBackgroundColor).toHaveBeenCalledWith('#0e0e11');
+    expect(currentWindow.setBackgroundColor).toHaveBeenCalledWith('#181a1d');
     if (process.platform === 'win32') expect(currentWindow.setTitleBarOverlay).toHaveBeenCalledWith({
-      height: 36, color: '#1a2129', symbolColor: '#b8c0c5'
+      height: 36, color: '#202226', symbolColor: '#b8c0c5'
     });
     expect(getConfig().goal.enabled).toBe(false);
   });

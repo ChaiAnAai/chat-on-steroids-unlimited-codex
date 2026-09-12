@@ -44,26 +44,57 @@ export function filterSettingsSections(view: HTMLElement, search: string): void 
   if (empty) empty.hidden = !query || matches > 0;
 }
 
-let toastTimer: number | undefined;
-
-export function toast(message: string): void {
-  document.querySelector('.toast')?.remove();
-  const node = el('div', 'toast', message);
-  document.body.append(node);
-  window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => node.remove(), 3200);
+export interface FeedbackOptions {
+  host?: HTMLElement;
+  current?: () => boolean;
+  retry?: () => void;
+  operation?: string;
 }
-
-/** Unwraps an IPC reply, showing the main process's own error text on failure. */
+export function feedback(host: HTMLElement, message: string, tone: 'busy' | 'success' | 'error', retry?: () => void): void {
+  host.hidden = false; host.classList.add('operation-feedback'); host.dataset.tone = tone;
+  host.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+  host.setAttribute('aria-busy', String(tone === 'busy'));
+  host.replaceChildren(el('span', '', message));
+  if (retry) {
+    const button = el('button', 'btn', () => t('Retry')) as HTMLButtonElement;
+    button.type = 'button'; button.onclick = retry; host.append(button);
+  }
+}
+export function toast(message: string, tone: 'success' | 'error' = 'success'): void {
+  let stack = document.getElementById('notificationStack');
+  if (!stack) { stack = el('section', 'notification-stack'); stack.id = 'notificationStack'; document.body.append(stack); }
+  const node = el('div', 'toast'); feedback(node, message, tone);
+  const close = el('button', 'btn', '×') as HTMLButtonElement;
+  close.type = 'button'; ui(close, 'aria-label', () => t('Dismiss notification'));
+  close.onclick = () => node.remove(); node.append(close); stack.append(node);
+  if (tone !== 'error') window.setTimeout(() => node.remove(), 5000);
+}
+/** IPC receipt unwrapping with operation-local, persistent failure feedback. */
 export async function run<T>(
-  promise: Promise<{ ok: true; data: T } | { ok: false; error: string }>
+  promise: Promise<{ ok: true; data: T } | { ok: false; error: string }>, options: FeedbackOptions = {}
 ): Promise<T | null> {
-  const reply = await promise;
-  if (!reply.ok) {
-    toast(reply.error);
+  const scope = options.host ?? document.activeElement?.closest<HTMLElement>('.plugin-dialog-body, .plugin-card, .setting, form, .appearance-section');
+  const report = (message: string) => {
+    if (options.current && !options.current()) return;
+    if (scope?.isConnected) {
+      let host = [...scope.querySelectorAll<HTMLElement>(':scope > .operation-feedback')].find(node => node.dataset.operation === options.operation);
+      if (!host) { host = el('div', 'operation-feedback'); scope.append(host); }
+      if (options.operation) host.dataset.operation = options.operation;
+      feedback(host, message, 'error', options.retry);
+    } else toast(message, 'error');
+  };
+  try {
+    const reply = await promise;
+    if (!reply.ok) { report(reply.error); return null; }
+    if (options.operation && (!options.current || options.current())) {
+      for (const node of scope?.querySelectorAll<HTMLElement>(':scope > .operation-feedback') ?? [])
+        if (node.dataset.operation === options.operation) node.remove();
+    }
+    return reply.data;
+  } catch (error) {
+    report(error instanceof Error ? error.message : t('Operation failed. Please try again.'));
     return null;
   }
-  return reply.data;
 }
 
 /** "12s ago" for a timestamp the main process vouched for, "never" for null. */

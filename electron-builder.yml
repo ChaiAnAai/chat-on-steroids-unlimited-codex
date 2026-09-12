@@ -10,6 +10,8 @@ directories:
 # platform section so a package never carries another OS/CPU's executable payload.
 files:
   - out/**
+  - '!out/ui-review/**'
+  - '!out/**/*.log'
   - package.json
   - '!node_modules/@img/sharp-*/**/*'
   - '!node_modules/@img/sharp-libvips-*/**/*'
@@ -77,6 +79,8 @@ win:
 
 nsis:
   include: scripts/windows-installer-acl.nsh
+  installerLanguages: [en_US, zh_CN]
+  displayLanguageSelector: true
   oneClick: false
   perMachine: false
   buildUniversalInstaller: false

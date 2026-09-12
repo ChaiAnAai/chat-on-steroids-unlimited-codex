@@ -90,9 +90,11 @@ it('carries validated user image bytes through an exact-session MCP result and a
       return true;
     });
     const exhausted = await call('session_finish', { summary: 'All received stages are complete' });
-    expect(notifications).toBe(1);
+    // Same-session execution acknowledges the last delivery but never starts the legacy
+    // helper/finish hold, even when the retained advanced finish-action option is notify.
+    expect(notifications).toBe(0);
     expect(exhausted.result.content.some((row: { text?: string }) => row.text?.includes('Queued user instructions are ready'))).toBe(false);
-    expect(exhausted.result.content.some((row: { text?: string }) => row.text?.includes('The user has been notified'))).toBe(true);
+    expect(exhausted.result.content.some((row: { text?: string }) => row.text?.includes('No finish hold or helper request was started'))).toBe(true);
     expect((await listInputs()).find(row => row.id === stageTwo.id)?.state).toBe('sent');
   } finally {
     setFinishNotifier(null);

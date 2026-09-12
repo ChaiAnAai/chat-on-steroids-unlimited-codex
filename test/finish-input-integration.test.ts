@@ -4,7 +4,7 @@ import { makeTempDir, removeTempDir } from './helpers.js';
 const hooks = vi.hoisted(() => ({ caller: { sessionId: '', conversationId: '' }, startedAt: 2000, followup: vi.fn() }));
 vi.mock('../src/main/goal.js', async original => ({ ...await original<object>(), draftFastFollowup: hooks.followup }));
 vi.mock('../src/main/mcp/call-context.js', async original => ({ ...await original<object>(), currentCall: () => ({ caller: hooks.caller, startedAt: hooks.startedAt }) }));
-import { initConfigPath, defaultConfig, saveConfig } from '../src/main/config.js';
+import { initConfigPath, defaultConfig as productDefaultConfig, saveConfig } from '../src/main/config.js';
 import { initDurableStore, resetDurableForTests, flushDurable } from '../src/main/durable.js';
 import { initSessionStore, createSession, appendEvent, observeSessionModel, resetSessionStoreForTests, flushSessions } from '../src/main/session/store.js';
 import { setGoalSwitchNow, resetGoalStateForTests } from '../src/main/goal.js';
@@ -44,3 +44,6 @@ describe('finish producer to durable injection integration', () => {
     expect((await listInputs())[0]!.state).toBe('cancelled');
   });
 });
+
+// Retained advanced helper-policy regression fixture. New default is covered by workflow.test.ts.
+function defaultConfig(...args: Parameters<typeof productDefaultConfig>) { const config = productDefaultConfig(...args); config.goal.executionPolicy = 'legacy-helper'; return config; }

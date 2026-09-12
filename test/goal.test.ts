@@ -23,7 +23,7 @@ vi.mock('electron', () => ({
   }
 }));
 
-const { defaultConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
+const { defaultConfig: productDefaultConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
 const { initSecretsPath, setSecret } = await import('../src/main/secrets.js');
 const { initDurableStore } = await import('../src/main/durable.js');
 const { appendEvent, createSession, observeSessionModel, initSessionStore, resetSessionStoreForTests } = await import(
@@ -2623,3 +2623,6 @@ describe('a custom OpenAI-compatible provider', () => {
     expect(goal.resolveGoalBaseUrl({ kind: 'openrouter', baseUrl: '' })).toBe('https://openrouter.ai/api/v1');
   });
 });
+
+// Retained advanced helper-policy regression fixture. New default is covered by workflow.test.ts.
+function defaultConfig(...args: Parameters<typeof productDefaultConfig>) { const config = productDefaultConfig(...args); config.goal.executionPolicy = 'legacy-helper'; return config; }

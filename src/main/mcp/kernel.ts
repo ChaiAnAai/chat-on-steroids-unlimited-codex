@@ -1,4 +1,5 @@
 import { offerToolInput, acknowledgeToolInput, TOOL_INPUT_HEADER } from '../session/input.js';
+import { accountToolDenial, inboundAccountPrincipal } from './account-guard.js';
 import { pluginManager } from '../plugins/manager.js';
 import { WINDOWS_COMPUTER_STATE_INPUT_METHODS } from '../../shared/windows-computer.js';
 /**
@@ -452,7 +453,7 @@ export async function dispatch(
     startedAt: Date.now(),
     transportKey,
     agent: null,
-    caller: parent ? { ...parent.caller } : { transportKey, requestId, conversationId: null, sessionId: null },
+    caller: parent ? { ...parent.caller } : { transportKey, requestId, conversationId: null, sessionId: null, account: inboundAccountPrincipal() },
     outcome: null,
     evidence: emptyEvidence()
   };
@@ -500,12 +501,17 @@ async function dispatchTracked(
   // question the setup screen has to answer honestly.
   surfaceToolCallAt.set(surface, Date.now());
   const isFinish = isFinishCall(name, args);
+  if (context.caller.account && context.caller.account.surface !== surface)
+    return fail('ACCOUNT_SURFACE_MISMATCH: this credential does not authorize the requested connector surface.');
   const startedAt = context.startedAt;
   // Cheap, non-blocking ingress identity. When the page has already reported this exact
   // request id, identity-sensitive handlers (workspace/session/agents) see it before they
   // touch state. If the page is one tick late this stays null; only handlers that actually
   // require identity wait for their own exact mate. Ordinary absolute reads/execs never wait.
   if (!nested) setCallerConversation(context, callerConversation(name, startedAt, requestId));
+  if (context.caller.account && !context.caller.conversationId && requestId) {
+    setCallerConversation(context, await awaitFreshCallOrigin(name, startedAt, IDENTITY_EVIDENCE_MS, { requestId }));
+  }
   // Only calls that need an *existing* per-chat workspace before the handler runs are
   // identity-sensitive here. An absolute read or an exec with an explicit absolute workdir is
   // self-contained and must stay fast; if its exact page mate is late, workspace.ts simply
@@ -520,7 +526,7 @@ async function dispatchTracked(
   // handler runs. Recording a late identity cannot recover a discarded anonymous frame.
   const desktopContext = surface === 'desktop' && (name === 'get_window_state' ||
     (WINDOWS_COMPUTER_STATE_INPUT_METHODS as readonly string[]).includes(name));
-  if (!context.caller.conversationId && (desktopContext || name === 'exec' || name === 'update_plan' || (identitySensitive && swarmRunning())) && requestId) {
+  if (!context.caller.conversationId && (desktopContext || name === 'exec' || name === 'update_plan' || (name === 'session' && (args as { action?: unknown } | null)?.action === 'checkpoint') || (identitySensitive && swarmRunning())) && requestId) {
     setCallerConversation(
       context,
       await awaitFreshCallOrigin(name, startedAt, IDENTITY_EVIDENCE_MS, { requestId })
@@ -571,6 +577,8 @@ async function dispatchTracked(
       await awaitFreshCallOrigin(name, startedAt, REQUEST_ID_GRACE_MS, { requestId })
     );
   }
+  const accountDenial = await accountToolDenial(context.caller.account ?? null, context.caller, name, args);
+  if (accountDenial) return fail(accountDenial);
   const supersededConversation = context.caller.conversationId
     ? (await conversationAttachment(context.caller.conversationId, context.caller.sessionId ?? null)) === 'superseded'
     : false;
@@ -589,17 +597,17 @@ async function dispatchTracked(
   // thought asleep takes the free execution slot back for that family, so the liveness
   // bookkeeping below sees the same run it would have seen had the parking not happened. A
   // chat the user stopped from the app is refused below anyway and reclaims nothing.
-  if (!supersededConversation && !isFinish && !isChatBlocked(context.caller.conversationId)) {
+  if (!context.caller.account && !supersededConversation && !isFinish && !isChatBlocked(context.caller.conversationId)) {
     reactivateDormantRunForConversation(context.caller.conversationId);
   }
-  const quietWorkers = supersededConversation ? [] : sleepSilentDetachedWorkers();
+  const quietWorkers = supersededConversation || context.caller.account ? [] : sleepSilentDetachedWorkers();
   for (const quiet of quietWorkers) {
     if (quiet.report) await recordAgentMessage(quiet.report, 'sent', quiet.info.conversationId);
   }
   // And this call is itself first-hand evidence that its own conversation is alive. That is
   // what undoes a worker given up on because its tab went away — the turn never stopped, so
   // the call arrives from a chat the app had written off, and the write-off was wrong.
-  const alive = supersededConversation ? null : noteAgentAlive(context.caller.conversationId);
+  const alive = supersededConversation || context.caller.account ? null : noteAgentAlive(context.caller.conversationId);
   if (alive?.report) await recordAgentMessage(alive.report, 'sent', context.caller.conversationId);
   // A prime message accepted while a worker's tab was closed could not safely be injected while
   // that server-side turn might still be running. If the silence check above has now proved the
@@ -683,7 +691,11 @@ async function dispatchTracked(
   }
   let handlerRan = false;
   markTiming('identity');
-  const invokeHandler = (): Promise<ToolResult> => {
+  const invokeHandler = async (): Promise<ToolResult> => {
+    const { planningToolAllowed } = await import('../session/workflow.js');
+    if (!await planningToolAllowed(context.caller.sessionId, name, surface)) return fail('PLANNING_ONLY: execution and external actions are disabled. Ask the user to execute the plan in the app.');
+    const denied = await accountToolDenial(context.caller.account ?? null, context.caller, name, args);
+    if (denied) return fail(denied);
     handlerRan = true;
     return run();
   };
@@ -731,6 +743,8 @@ async function dispatchTracked(
         : invokeHandler()
   );
   markTiming('handler');
+  const publicationDenial = await accountToolDenial(context.caller.account ?? null, context.caller, name, args);
+  if (publicationDenial) return fail('ACCOUNT_CONNECTION_CHANGED: the account connection changed while this request was running. Its result is withheld; do not automatically repeat the operation.');
   // Identity, once, from this call's own evidence — see callerConversation. `agents` has
   // already established its own inside the call and adopted it, and re-reading here would
   // only be able to disagree with the stronger answer it waited for.

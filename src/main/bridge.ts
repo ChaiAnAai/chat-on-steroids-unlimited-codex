@@ -1,4 +1,8 @@
 import { conversationProgress } from './session/progress.js';
+import { authenticateAccount, requestAccountPairing, claimAccountPairing, listAccounts } from './accounts.js';
+import { currentAccountTransport, withAccountTransport } from './account-context.js';
+import { accountRouteError } from './bridge-account-scope.js';
+import { indexedSessions } from './session/store.js';
 import { MAX_CHATGPT_MESSAGE_CHARS, userPromptText } from '../shared/user-prompt.js';
 import { prepareSessionPrompt } from './session/prompt.js';
 import { pendingChatModelRequest, observeChatModels, requestChatModels } from './chat-models.js';
@@ -94,6 +98,7 @@ import {
   findSessionByConversation,
   getSession,
   readSessionPlan,
+  readSessionPlanHistory,
   listUsageSessions,
   readRecentEvents,
   readActivityEvents,
@@ -188,7 +193,9 @@ export const DEFAULT_PORTS = [8765, 8766, 8767, 8768, 8769];
  * test POSTing observations into the user's actual history. `CLF_BRIDGE_PORTS=0` asks the
  * OS for a free port per bridge instead, so no run can collide with another or with the app.
  */
-const PORTS = ((): number[] => {
+// Resolve at listener startup: Electron's entrypoint selects preview isolation after
+// static imports have evaluated, before calling startBridge().
+export function configuredBridgePorts(): number[] {
   const raw = process.env.CLF_BRIDGE_PORTS;
   if (!raw) return DEFAULT_PORTS;
   const parsed = raw
@@ -196,7 +203,7 @@ const PORTS = ((): number[] => {
     .map((part) => Number.parseInt(part.trim(), 10))
     .filter((value) => Number.isInteger(value) && value >= 0 && value <= 65535);
   return parsed.length > 0 ? parsed : DEFAULT_PORTS;
-})();
+}
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 /** Durable settled-turn orphan safety net. */
 export const STALE_SWARM_MS = 2 * 60_000;
@@ -523,6 +530,8 @@ let port: number | null = null;
 let lastSeenAt: number | null = null;
 let browserPresenceTimer: NodeJS.Timeout | null = null;
 let commands: Command[] = [];
+/** Existing durable command reservations arbitrate creation against the user outbox. */
+export function hasPendingChatCreation(): boolean { return commands.some(command => command.spec.type === 'worker' || command.spec.type === 'resume'); }
 let commandReceipts: CommandReceipt[] = [];
 /**
  * Worker/revival transports already removed from live delivery but still kept in durable
@@ -707,8 +716,11 @@ async function browserDisconnected(): Promise<boolean> {
   return (await getSecret('bridgeToken')) === BROWSER_DISCONNECTED;
 }
 
+const requestBodies = new WeakMap<http.IncomingMessage, Promise<unknown>>();
 function readBody(req: http.IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
+  const existing = requestBodies.get(req);
+  if (existing) return existing;
+  const pending = new Promise((resolve, reject) => {
     let size = 0;
     let overflowed = false;
     const chunks: Buffer[] = [];
@@ -736,6 +748,8 @@ function readBody(req: http.IncomingMessage): Promise<unknown> {
     });
     req.on('error', reject);
   });
+  requestBodies.set(req, pending);
+  return pending;
 }
 
 /**
@@ -907,7 +921,7 @@ function parseObservations(input: unknown): ChatObservation[] {
     ) {
       observation.goalEligible = true;
     }
-    if (typeof item['detail'] === 'string') observation.detail = item['detail'].slice(0, 500);
+    if (typeof item['detail'] === 'string') observation.detail = item['detail'].slice(0, kind === 'page_tool' ? 8192 : 500);
     if (typeof item['recoverable'] === 'boolean') observation.recoverable = item['recoverable'];
     if (item['blocking'] === true) observation.blocking = true;
     if (Array.isArray(item['calls'])) observation.calls = parseCallEvidence(item['calls']);
@@ -1029,8 +1043,11 @@ function goalBlockReason(id: string): 'worker' | 'blocked' | '' {
 }
 
 export type SessionControlsView = {
+  workflow?: import('../shared/workflow.js').SessionWorkflow;
+  restriction?: string | null;
   sessionId: string;
   plan: import('../shared/agent-plan.js').AgentPlan | null;
+  planHistory?: import('../shared/agent-plan.js').AgentPlanHistoryEntry[];
   conversationId: string;
   automation: 'off' | 'goal' | 'loop';
   objective: string;
@@ -1074,15 +1091,16 @@ export async function sessionControlsFor(sessionId: string): Promise<SessionCont
   const finishHeld = !blocked && await sessionFinishHeld(sessionId, activeTurnId, id);
   const draft = goalViewFor(id);
   const inputPolicy = await sessionInputPolicy(sessionId, sessionInputActivity(session));
-  return { sessionId, plan: await readSessionPlan(sessionId), conversationId: id, activeTurnId, finishHeld,
+  return { sessionId, plan: await readSessionPlan(sessionId), planHistory: await readSessionPlanHistory(sessionId),
+    workflow: session.workflow, restriction: await (await import('./session/workflow.js')).connectionRestriction(session.accountId), conversationId: id, activeTurnId, finishHeld,
     queueAtFinish: !blocked && inputPolicy.queueAtFinish, canInject: !blocked && inputPolicy.canInject,
     canSendDirectly: !blocked && !!inputPolicy.directTurn,
     finishGoalDraft: getSessionFinishDraft(sessionId, activeTurnId),
     finishWaiting: await sessionFinishWaiting(sessionId, activeTurnId, id),
     goalDraft: draft ? { stage: draft.stage, model: draft.model, text: draft.text.slice(-8000), error: draft.error } : null,
     stopPending: commands.some(c => c.spec.type === 'stop' && c.spec.sessionId === sessionId && c.spec.turnId === activeTurnId),
-    objective: goalObjectiveFor(id),
-    automation: goalArmedFor(id) && !blocked ? control.enabled ? control.mode : 'goal' : 'off',
+    objective: session.workflow?.objective ?? goalObjectiveFor(id),
+    automation: getConfig().goal.executionPolicy !== 'legacy-helper' ? session.workflow?.mode ?? 'off' : goalArmedFor(id) && !blocked ? control.enabled ? control.mode : 'goal' : 'off',
     blocked, job: resumeJobFor(sessionId) };
 }
 /** One absolute budget includes opening an absent tab and native hydration. */
@@ -1191,6 +1209,11 @@ async function saveConversationObjective(id: string, text: string, named: 'goal'
 }
 export async function setSessionObjective(sessionId: string, text: string, mode: 'goal' | 'loop'): Promise<SessionControlsView> {
   const id = await controlledConversation(sessionId);
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') {
+    if (goalBlockReason(id)) throw new Error('chat_blocked');
+    await (await import('./session/workflow.js')).controlWorkflow(sessionId, mode, text);
+    changed(); return sessionControlsFor(sessionId);
+  }
   await saveConversationObjective(id, text, mode, async () => {
     if (await controlledConversation(sessionId) !== id) throw new Error('conversation_changed');
   });
@@ -1199,6 +1222,10 @@ export async function setSessionObjective(sessionId: string, text: string, mode:
 export async function setSessionAutomation(sessionId: string, automation: SessionControlsView['automation']): Promise<SessionControlsView> {
   const id = await controlledConversation(sessionId);
   if (automation !== 'off' && goalBlockReason(id)) throw new Error(goalWorkerChat(id) ? 'worker_goal_disabled' : 'chat_blocked');
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') {
+    await (await import('./session/workflow.js')).controlWorkflow(sessionId, automation);
+    changed(); return sessionControlsFor(sessionId);
+  }
   const mode = automation === 'off' ? goalSwitchFor(id).mode : automation;
   // The existing reply setter retires drafts and durably closes the pickup for Off.
   const held = await setGoalSwitchNow(id, mode, automation !== 'off');
@@ -1213,6 +1240,7 @@ export async function setSessionAutomation(sessionId: string, automation: Sessio
 }
 /** One ticket publication boundary shared by browser and app controls. */
 async function fileCompactionTicket(sessionId: string, id: string, automatic = false) {
+  if (await (await import('./session/workflow.js')).connectionRestriction()) throw new Error('Connection paused: resolve the provider restriction before creating a handoff.');
   if (await controlledConversation(sessionId) !== id) throw new Error('conversation_changed');
   if (goalWorkerChat(id)) throw new Error('worker_compaction_disabled');
   if (isChatBlocked(id)) throw new Error('chat_blocked');
@@ -1301,6 +1329,19 @@ function chatIsWorking(conversationId: string): boolean {
 }
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const accountId = req.headers['x-account-id'];
+  if (typeof accountId === 'string' && req.method !== 'OPTIONS') {
+    const auth = req.headers.authorization;
+    const principal = typeof auth === 'string' && auth.startsWith('Bearer ')
+      ? await authenticateAccount(accountId, auth.slice(7)) : null;
+    if (!principal || String(principal.connectionVersion) !== req.headers['x-account-version'])
+      return json(res, 401, { error: 'stale_account_connection' }, originOf(req).origin);
+    return withAccountTransport(principal, () => handleCore(req, res));
+  }
+  return handleCore(req, res);
+}
+
+async function handleCore(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const { ok: originAllowed, origin } = originOf(req);
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
   const route = url.pathname;
@@ -1310,7 +1351,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     if (!origin) return json(res, 403, { error: 'forbidden_origin' }, null);
     res.writeHead(204, {
       'access-control-allow-origin': origin,
-      'access-control-allow-headers': 'authorization, content-type, x-extension-version, x-extension-protocol',
+      'access-control-allow-headers': 'authorization, content-type, x-extension-version, x-extension-protocol, x-account-id, x-account-version',
       'access-control-allow-methods': 'GET, POST, OPTIONS',
       // Chrome asks for this before letting an extension reach a loopback address.
       'access-control-allow-private-network': 'true',
@@ -1342,6 +1383,27 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     );
   }
 
+  if (route === '/accounts/pair' && req.method === 'POST') {
+    if (!protocolCompatible(req)) return json(res, 426, { error: 'incompatible_extension', bridge: BRIDGE_PROTOCOL }, origin);
+    if (rateLimited()) return json(res, 429, { error: 'rate_limited' }, origin);
+    const raw = await readBody(req) as Record<string, unknown>;
+    if (!raw || typeof raw.accountId !== 'string') return json(res, 400, { error: 'invalid_account_pairing' }, origin);
+    try {
+      if (raw.action === 'recheck') {
+        const bearer = req.headers.authorization;
+        const principal = typeof bearer === 'string' && bearer.startsWith('Bearer ')
+          ? await authenticateAccount(raw.accountId, bearer.slice(7)) : null;
+        if (!principal) return json(res, 401, { error: 'stale_account_connection' }, origin);
+        // Explicit popup check can learn the epoch after trusted-main reconnect. It does
+        // not reconnect a disconnected registry, confirm identity, or authorize work.
+        return json(res, 200, { accountId: principal.accountId, connectionVersion: principal.connectionVersion, identityVerified: false }, origin);
+      }
+      if (typeof raw.nonce === 'string') return json(res, 200, await claimAccountPairing(raw.accountId, raw.nonce), origin);
+      if ((raw.browser !== 'chrome' && raw.browser !== 'edge') || typeof raw.profileRef !== 'string') return json(res, 400, { error: 'invalid_account_profile' }, origin);
+      return json(res, 202, await requestAccountPairing(raw.accountId, { browser: raw.browser, profileRef: raw.profileRef }), origin);
+    } catch { return json(res, 409, { error: 'account_pairing_pending_or_invalid' }, origin); }
+  }
+
   if (route === '/pair' && req.method === 'POST') {
     if (!protocolCompatible(req)) {
       return json(
@@ -1355,6 +1417,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         origin
       );
     }
+    if ((await listAccounts()).length) return json(res, 409, { error: 'account_pairing_required' }, origin);
     if (rateLimited()) return json(res, 429, { error: 'rate_limited' }, origin);
     let body: unknown;
     try {
@@ -1400,8 +1463,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   // A deliberate revocation is different from a stale credential. The extension repairs a
   // normal 401 by silently provisioning once, so naming this state on the first protected
   // request is what prevents that repair path from undoing the user's Disconnect click.
-  if (await browserDisconnected()) return json(res, 401, { error: 'browser_disconnected' }, origin);
-  if (!(await authorised(req))) return json(res, 401, { error: 'unauthorised' }, origin);
+  const account = currentAccountTransport();
+  if (!account) {
+    if ((await indexedSessions()).some(row => row.accountId) || (await listInputs()).some(row => row.accountId))
+      return json(res, 409, { error: 'account_pairing_required' }, origin);
+    if (await browserDisconnected()) return json(res, 401, { error: 'browser_disconnected' }, origin);
+    if (!(await authorised(req))) return json(res, 401, { error: 'unauthorised' }, origin);
+  }
   if (!protocolCompatible(req)) {
     return json(
       res,
@@ -1417,6 +1485,35 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   // Charge only an authenticated extension. A random local process must not be able to
   // consume the browser's shared budget before failing origin/authentication.
   if (rateLimited()) return json(res, 429, { error: 'rate_limited' }, origin);
+  if (account) {
+    const raw = req.method === 'POST' ? await readBody(req) : {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return json(res, 400, { error: 'invalid_account_request' }, origin);
+    const sessions = await indexedSessions();
+    const inputRows = await listInputs();
+    const error = accountRouteError(account, route, raw as Record<string, unknown>, url, {
+      sessions, inputs: inputRows, stopCommands: commands.flatMap(command => command.spec.type === 'stop' ? [{ id: command.id, conversationId: command.spec.conversationId }] : [])
+    });
+    if (error) return json(res, 403, { error }, origin);
+    if (route === '/status') {
+      const owned = new Set(sessions.filter(row => row.accountId === account.accountId).map(row => row.conversationId));
+      const ownedInputs = new Set(inputRows.filter(row => row.accountId === account.accountId).map(row => row.id));
+      return json(res, 200, { ok: true, ...account,
+        conversations: liveConversations().filter(row => owned.has(row.conversationId)),
+        stopTurns: (await pendingStopCommands()).filter(row => owned.has(row.conversationId)),
+        inputs: (await pendingBrowserInputs()).filter(row => ownedInputs.has(row.id)),
+        inputOpeningIds: inputRows.filter(row => ownedInputs.has(row.id) && !['sent', 'cancelled', 'failed'].includes(row.state)).map(row => row.id),
+        modelCatalogRequest: null, pluginRefreshRequests: [], browserPreferenceRequest: null,
+        commands: 0, repairs: [], revival: null, placement: null, background: getConfig().ui.backgroundChats === true
+      }, origin);
+    }
+    if (route === '/usage') {
+      const body = raw as Record<string, unknown>;
+      await (await import('./session/usage.js')).observeAccountUsage(body.rows, body.observedAt, { ...account, surface: 'bridge' });
+      return json(res, 200, { ok: true }, origin);
+    }
+    // Model discovery still has a global owner. Refuse rather than overwrite another account's catalog.
+    if (route === '/models') return json(res, 409, { error: 'account_model_discovery_unavailable' }, origin);
+  }
   if (noteBrowserSeen()) changed();
 
   if (route === '/models' && req.method === 'POST') {
@@ -2022,6 +2119,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
               seq: event.origin ?? event.seq,
               kind: 'page_tool',
               label: event.label,
+              ...(event.detail ? { detail: event.detail } : {}),
               messageId: event.messageId
             }
           ];
@@ -3130,6 +3228,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       if (!commands.includes(command) || Date.now() - command.createdAt >= STOP_COMMAND_TIMEOUT_MS || !await stopCommandCurrent(command.spec)) return json(res, 409, { error: 'stop_turn_changed' }, origin);
       return json(res, 200, { command: describe(command, client) }, origin);
     }
+    if (await (await import('./session/workflow.js')).connectionRestriction()) return json(res, 409, { error: 'connection_restricted' }, origin);
     if (revivalDeliveryProven(command)) {
       // The browser send already crossed its semantic boundary. Keep the durable command only
       // as the original 30-second liveness clock; never hand its text to any document again.
@@ -3925,6 +4024,7 @@ async function closeCancelledBridgeStart(instance: http.Server, actual: number |
 }
 
 async function startBridgeOnce(epoch: number): Promise<number | null> {
+  const ports = configuredBridgePorts();
   bridgeRecovering = true;
   const instance = http.createServer((req, res) => {
     if (bridgeRecovering) {
@@ -3939,7 +4039,7 @@ async function startBridgeOnce(epoch: number): Promise<number | null> {
   instance.headersTimeout = 15_000;
   instance.requestTimeout = 30_000;
 
-  for (const candidate of PORTS) {
+  for (const candidate of ports) {
     const bound = await new Promise<boolean>((resolve) => {
       const onError = (): void => resolve(false);
       instance.once('error', onError);
@@ -4045,7 +4145,7 @@ async function startBridgeOnce(epoch: number): Promise<number | null> {
     }
   }
   bridgeRecovering = false;
-  logWarn(`bridge could not bind any of ports ${PORTS.join(', ')}; the browser extension will not connect`);
+  logWarn(`bridge could not bind any of ports ${ports.join(', ')}; the browser extension will not connect`);
   return null;
 }
 
@@ -5713,8 +5813,8 @@ function nonDiscardableAgentConversations(): string[] {
 
 /**
  * Idle app-owned pages are a reusable resource, independent of durable chat/worker life.
- * Two minutes gives follow-ups a warm page; five minutes releases an unused renderer.
- * The extension still proves the exact document has no draft or generation before closing.
+ * Idle time permits reuse for an explicit new input, never unsolicited tab closure.
+ * Only a retired operation can release a document, with fresh page safety proof.
  */
 async function browserTabPolicy(openConversations: Set<string>) {
   // Existing cached metadata is the ownership index; never scan transcripts per browser poll.
@@ -5805,10 +5905,9 @@ async function browserTabPolicy(openConversations: Set<string>) {
     return row?.activeTurnId === null && Math.max(row.lastTurnEndAt ?? 0, row.lastAssistantFinalAt ?? 0) > 0;
   });
   const quietFor = (id: string, ms: number) => Date.now() - lastActivity.get(id)! >= ms;
-  const idlePages = available.filter(id => quietFor(id, 300_000));
   return {
     idleReuseAfterMs: 120_000,
-    idleCloseAfterMs: 300_000,
+    idleCloseAfterMs: null,
     cancelledDecisionClaims: cancelledDecisionClaims.map(row => ({ id: row.id, owner: row.owner, conversationId: row.conversationId })),
     // Only terminal/blocked helpers and superseded sources grant close authority.
     retiredConversations: [...new Set([...idle, ...supersededSourceConversations()])]
@@ -5819,7 +5918,7 @@ async function browserTabPolicy(openConversations: Set<string>) {
       !supersededSourceConversations().includes(id)).sort(),
     nonDiscardableConversations: [...protectedChats].sort(),
     blockedConversations: blocked.sort(),
-    closableConversations: [...new Set([...idlePages, ...idle, ...supersededSourceConversations().filter(id => openConversations.has(id) && !protectedChats.has(id))])].sort()
+    closableConversations: [...new Set([...idle, ...supersededSourceConversations().filter(id => openConversations.has(id) && !protectedChats.has(id))])].sort()
   };
 }
 
@@ -6835,6 +6934,8 @@ async function deliver(): Promise<void> {
 }
 
 async function deliverOne(): Promise<void> {
+  if (await (await import('./session/workflow.js')).connectionRestriction()) return;
+  if (getConfig().goal.executionPolicy !== 'legacy-helper' && (await listInputs()).some(entry => !entry.sessionId && entry.state === 'browser')) return;
   tidyCommands();
   const command = nextDeliverable();
   if (!command) return;

@@ -197,7 +197,9 @@ describe('runCommand', () => {
     const result = await launchCommand(shell!, ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], cwd);
     expect(result.pid).toBeGreaterThan(0);
 
-    const deadline = Date.now() + 3000;
+    // launchCommand proves asynchronous spawn, not a three-second cold PowerShell SLA.
+    // Keep real disk evidence mandatory while allowing full-suite Windows startup load.
+    const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
       const text = await fs.readFile(marker, 'utf8').catch(() => '');
       if (text === 'launched') return;

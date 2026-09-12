@@ -12,7 +12,7 @@ async function run(script: string): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), 'cos-app-catalog-test-'));
   try {
     const file = path.join(directory, 'test.ps1');
-    await writeFile(file, `$ErrorActionPreference='Stop'\nfunction Get-WindowRows { return @() }\n${WINDOWS_APPS_SCRIPT}\n${script}`, 'utf8');
+    await writeFile(file, `\uFEFF$ErrorActionPreference='Stop'\nfunction Get-WindowRows { return @() }\n${WINDOWS_APPS_SCRIPT}\n${script}`, 'utf8');
     const { stdout } = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', file], {
       windowsHide: true, timeout: 15_000, maxBuffer: 32_768
     });
@@ -21,6 +21,18 @@ async function run(script: string): Promise<string> {
 }
 
 describe.runIf(process.platform === 'win32')('Windows installed apps', () => {
+  it('preserves opaque catalog IDs when their strings are invalid Windows paths', async () => {
+    expect(await run(String.raw`
+$item=[pscustomobject]@{ Path='shell:"opaque".exe'; Name='Opaque catalog app' }
+$item | Add-Member -MemberType ScriptMethod -Name ExtendedProperty -Value { param($name) if ($name -eq 'System.Link.TargetParsingPath') { return 'C:\invalid"target.exe' }; return '' }
+$identity=Get-AppCatalogIdentity $item
+if ($identity.id -cne $item.Path -or $identity.processPath -ne '') { throw 'Opaque catalog identity was lost' }
+$item.Path='shell:"not-a-path"'
+$identity=Get-AppCatalogIdentity $item
+if ($identity.id -cne $item.Path) { throw 'Invalid filesystem text prevented a catalog identity' }
+Write-Output 'OPAQUE_ID_VERIFIED'
+`)).toBe('OPAQUE_ID_VERIFIED');
+  });
   it('returns a bounded real catalog and includes empty windows when none were observed', async () => {
     const result = JSON.parse(await run(`
 $result=Get-WindowsApps @{limit=2}

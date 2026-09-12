@@ -1,8 +1,14 @@
-import { ui, uiText, t, initLanguage } from './i18n.js';
+import { initAppearance } from './appearance.js';
+import { mountAccountsPanel } from './accounts-panel.js';
+import type { Appearance, ThemeMode } from '../shared/appearance.js';
+import { ui, uiText, t, initLanguage, setLanguage, currentLanguage, legacyLanguage, configureLanguagePersistence, finishLanguageMigration } from './i18n.js';
+import { mountConnectionGuide } from './onboarding.js';
 import { paintPluginRefreshReminder } from './plugin-refresh-reminder.js';
 import { initUsage, refreshUsage } from './usage.js';
 import { initSidebarResize } from './sidebar-resize.js';
 import { initPlugins, applyPluginsState } from './plugins.js';
+import { mountSkillsPanel } from './skills-panel.js';
+let skillsPanel: ReturnType<typeof mountSkillsPanel> | undefined;
 import { initBrowserPreferences } from './browser-preferences.js';
 /**
  * Renderer. No Node, no filesystem, no network — everything goes through window.api.
@@ -32,7 +38,7 @@ import {
   WRITE_CAPABILITIES
 } from '../shared/types.js';
 import type { SwarmState } from '../shared/session.js';
-import { $, ago, el, icon, run, shortAgo, toast } from './dom.js';
+import { $, ago, el, icon, run, shortAgo, toast, feedback } from './dom.js';
 import { chatApply, chatSettingsPatch, chatVisible, initChat, openChatView } from './chat.js';
 
 declare global {
@@ -43,6 +49,15 @@ declare global {
 
 const api = window.api;
 initLanguage();
+let languageSave: Promise<void> = Promise.resolve();
+configureLanguagePersistence(language => {
+  languageSave = languageSave.catch(() => undefined).then(async () => {
+    const result = await api.saveLanguage(language);
+    if (!result.ok) { toast(t('Language was not saved. Try again.'), 'error'); return; }
+    finishLanguageMigration();
+  }).catch(() => { toast(t('Language was not saved. Try again.'), 'error'); });
+});
+void api.saveLanguage(legacyLanguage(), true).then(result => { if (result.ok) { setLanguage(result.data, false); finishLanguageMigration(); } }).catch(() => { toast(t('Language was not saved. Try again.'), 'error'); });
 
 /** Same shape the platform uses; mirrored here only to grey out step 2 until it is valid. */
 const TUNNEL_ID_PATTERN = /^tunnel_[0-9a-f]{32}$/;
@@ -90,6 +105,8 @@ const GROUPS: Group[] = [
 let state: AppState | null = null;
 /** Guards against saving while we are writing values into the controls. */
 let applying = false;
+let refreshConnectionGuide: (() => void) | null = null;
+let connectionPending = false;
 
 /**
  * Applies persisted form state without erasing a value the user is currently editing.
@@ -116,20 +133,25 @@ let showAllSteps = false;
 // ------------------------------------------------------------------- tabs
 
 function showTab(name: string): void {
+  if (name === 'skills') void skillsPanel?.refresh();
   const settings = name !== 'chat';
+  ui($('managementTitle'), 'textContent', () => name === 'plugins' ? t('Plugins') : t('Settings'));
   document.querySelector<HTMLElement>('.app')!.dataset.screen = settings ? 'settings' : 'chat';
-  document.querySelector<HTMLElement>('.sidebar-brand')!.hidden = settings;
-  $('workspaceSettings').hidden = settings;
+  document.querySelector<HTMLElement>('.sidebar-brand')!.hidden = false;
+  $('workspaceSettings').hidden = false;
+  $('workspaceSettings').classList.toggle('is-sel', settings && name !== 'plugins');
+  $('workspacePlugins').classList.toggle('is-sel', name === 'plugins');
   if (name === 'usage') void refreshUsage();
-  $('tabs').hidden = !settings;
-  $('backToChat').hidden = !settings;
-  document.querySelector<HTMLElement>('.sidebar-sessions')!.hidden = settings;
-  $('newChat').hidden = settings;
+  $('tabs').hidden = !settings || name === 'plugins';
+  $('backToChat').hidden = true;
+  document.querySelector<HTMLElement>('.sidebar-sessions')!.hidden = false;
+  $('newChat').hidden = false;
   if (name === 'settings') openChatView('settings');
   else if (name === 'chat') openChatView('timeline');
 
   for (const tab of document.querySelectorAll<HTMLElement>('nav button')) {
     tab.classList.toggle('is-sel', tab.dataset.tab === name);
+    if (tab.dataset.tab === name) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
   }
   for (const panel of document.querySelectorAll<HTMLElement>('.panel')) {
     panel.classList.toggle('is-active', panel.dataset.panel === (name === 'settings' ? 'chat' : name));
@@ -144,7 +166,8 @@ function showTab(name: string): void {
 }
 
 $('backToChat').addEventListener('click', () => showTab('chat'));
-$('workspaceSettings').addEventListener('click', () => showTab('home'));
+$('workspaceSettings').addEventListener('click', () => showTab('appearance'));
+$('workspacePlugins').addEventListener('click', () => showTab('plugins'));
 $('chatSettingsBtn').addEventListener('click', () => showTab('settings'));
 $('sessionList').addEventListener('click', () => showTab('chat'));
 $('newChat').addEventListener('click', () => showTab('chat'));
@@ -423,8 +446,11 @@ function toolsOn(next: AppState): number {
 // cannot repaint a control before the later save has captured what the user changed there.
 let settingsSaveQueue: Promise<void> = Promise.resolve();
 let requestedSettings: SettingsPatch | null = null;
+const settingsDrafts = new Map<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, { value: string; checked: boolean }>();
+const fieldSaves = new WeakMap<HTMLElement, SettingsPatch>();
+const appearance = initAppearance(value => { void save(value); });
 
-function save(over: { readOnly?: boolean; theme?: 'light' | 'dark' } = {}): Promise<void> {
+function save(over: { readOnly?: boolean; theme?: ThemeMode; appearance?: Appearance } = {}): Promise<void> {
   if (applying || !state) return Promise.resolve();
 
   const previous: AppState['config'] = requestedSettings
@@ -453,6 +479,7 @@ function save(over: { readOnly?: boolean; theme?: 'light' | 'dark' } = {}): Prom
       binaryPath: $<HTMLInputElement>('binaryPath').value.trim()
     },
     ui: {
+      language: currentLanguage(),
       chatBrowser: $<HTMLSelectElement>('chatBrowser').value as ChatBrowser,
       finishTool: $<HTMLInputElement>('finishTool').checked,
       planBackend: $<HTMLSelectElement>('planBackend').value as 'chatgpt' | 'api',
@@ -466,15 +493,32 @@ function save(over: { readOnly?: boolean; theme?: 'light' | 'dark' } = {}): Prom
       minimizeToTray: $<HTMLInputElement>('minimizeToTray').checked,
       developerMode: $<HTMLInputElement>('developerMode').checked,
       privacyScreenshots: $<HTMLInputElement>('privacyScreenshots').checked,
-      theme: over.theme ?? previous.ui.theme
+      theme: over.theme ?? previous.ui.theme,
+      appearance: over.appearance ?? previous.ui.appearance
     },
     ...chatPatch
   };
+  if (over.appearance || over.theme) {
+    Object.assign(patch, { capabilities: previous.capabilities, readOnly: previous.readOnly, tunnel: previous.tunnel,
+      sessions: previous.sessions, compaction: previous.compaction, multiAgent: previous.multiAgent, goal: previous.goal, mcp: previous.mcp ?? { instructions: '' },
+      ui: { ...previous.ui, theme: over.theme ?? previous.ui.theme, appearance: over.appearance ?? previous.ui.appearance } });
+  }
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLSelectElement || active instanceof HTMLTextAreaElement)
+    settingsDrafts.set(active, { value: active.value, checked: active instanceof HTMLInputElement && active.checked });
+  const field = active?.closest<HTMLElement>('.setting, .appearance-section');
+  let fieldFeedback: HTMLElement | undefined;
+  if (field) {
+    fieldFeedback = field.querySelector<HTMLElement>(':scope > .operation-feedback') ?? undefined;
+    if (!fieldFeedback) { fieldFeedback = el('div', 'operation-feedback'); field.append(fieldFeedback); }
+    fieldSaves.set(fieldFeedback, patch); feedback(fieldFeedback, t('Saving…'), 'busy');
+  }
   requestedSettings = patch;
+  feedback($('settingsSaveFeedback'), t('Saving…'), 'busy');
 
   const work = settingsSaveQueue.then(
-    () => saveSnapshot(patch, previous),
-    () => saveSnapshot(patch, previous)
+    () => saveSnapshot(patch, previous, fieldFeedback),
+    () => saveSnapshot(patch, previous, fieldFeedback)
   );
   settingsSaveQueue = work.then(
     () => undefined,
@@ -483,7 +527,7 @@ function save(over: { readOnly?: boolean; theme?: 'light' | 'dark' } = {}): Prom
   return work;
 }
 
-async function saveSnapshot(patch: SettingsPatch, previous: AppState['config']): Promise<void> {
+async function saveSnapshot(patch: SettingsPatch, previous: AppState['config'], fieldFeedback?: HTMLElement): Promise<void> {
   const toolSurfaceChanged =
     previous.sessions.record !== patch.sessions.record ||
     previous.multiAgent.enabled !== patch.multiAgent.enabled ||
@@ -507,9 +551,19 @@ async function saveSnapshot(patch: SettingsPatch, previous: AppState['config']):
     multiAgent: previous.multiAgent,
     goal: previous.goal
   };
-  const next = await run(api.saveSettings(patch, base));
+  let next: AppState | null = null, failure = '';
+  try {
+    const reply = await api.saveSettings(patch, base);
+    if (reply.ok) next = reply.data; else failure = reply.error;
+  } catch (error) { failure = error instanceof Error ? error.message : t('Settings could not be saved.'); }
+  const latest = requestedSettings === patch;
+  if (fieldFeedback && fieldSaves.get(fieldFeedback) === patch) feedback(fieldFeedback,
+    next ? t('All changes saved') : `${t('Not saved — your changes are kept.')} ${failure}`, next ? 'success' : 'error');
+  if (next && latest) { requestedSettings = null; settingsDrafts.clear(); }
+
   if (next) {
     apply(next);
+    if (latest) feedback($('settingsSaveFeedback'), t('All changes saved'), 'success');
     if (previous.multiAgent.enabled && !patch.multiAgent.enabled) {
       // A cached snapshot keeps offering the `agents` tool until the connector is
       // reloaded. Say so plainly rather than letting it look sticky.
@@ -517,9 +571,11 @@ async function saveSnapshot(patch: SettingsPatch, previous: AppState['config']):
     } else if (toolSurfaceChanged) {
       toast(t("Tools changed. Start a new ChatGPT conversation to guarantee the new tool list is loaded."));
     }
-  } else await refresh();
-  // Do not erase the desired state of a newer queued save when an older one completes.
-  if (requestedSettings === patch) requestedSettings = null;
+  } else if (latest) {
+    feedback($('settingsSaveFeedback'), `${t('Not saved — your changes are kept.')} ${failure}`,
+      'error', () => { feedback($('settingsSaveFeedback'), t('Saving…'), 'busy');
+        settingsSaveQueue = settingsSaveQueue.then(() => saveSnapshot(patch, previous, fieldFeedback)); });
+  }
 }
 
 // ---------------------------------------------------------------- helpers
@@ -863,7 +919,20 @@ function apply(next: AppState): void {
   const previousState = state;
   state = next;
   applying = true;
-  const { config, status } = next;
+  const { status } = next;
+  // Settings patches are nested. A shallow spread would replace an entire section with a
+  // partial form snapshot and make unrelated state pushes appear to reset controls.
+  const config = requestedSettings ? {
+    ...next.config, ...requestedSettings,
+    ui: { ...next.config.ui, ...requestedSettings.ui },
+    tunnel: { ...next.config.tunnel, ...requestedSettings.tunnel },
+    sessions: { ...next.config.sessions, ...requestedSettings.sessions },
+    compaction: { ...next.config.compaction, ...requestedSettings.compaction },
+    multiAgent: { ...next.config.multiAgent, ...requestedSettings.multiAgent },
+    goal: { ...next.config.goal, ...requestedSettings.goal },
+    capabilities: { ...next.config.capabilities, ...requestedSettings.capabilities },
+    mcp: { ...next.config.mcp, ...requestedSettings.mcp }
+  } : next.config;
 
   const connected = status.state === 'connected';
   const offline = status.state === 'offline';
@@ -872,11 +941,7 @@ function apply(next: AppState): void {
   const running = isRunning(status.state);
   const missing = missingStep(next);
 
-  // ---- theme
-  const dark = config.ui.theme === 'dark';
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  $('themeIcon').setAttribute('href', dark ? '#i-sun' : '#i-moon');
-  ui($('themeBtn'), 'title', () => dark ? t("Switch to light mode") : t("Switch to dark mode"));
+  appearance.apply(requestedSettings?.ui.theme ?? config.ui.theme, requestedSettings?.ui.appearance ?? config.ui.appearance);
 
   // ---- header
   const live = $('live');
@@ -894,9 +959,18 @@ function apply(next: AppState): void {
 
   const connectBtn = $<HTMLButtonElement>('connectBtn');
   connectBtn.classList.toggle('is-running', running);
-  ui($('connectLabel'), 'textContent', () => running ? t("Disconnect") : t("Connect"));
-  connectBtn.disabled = !running && missing !== null;
-  connectBtn.title = !running && missing ? missing.text : '';
+  ui($('connectLabel'), 'textContent', () => connectionPending ? t("Working…") : running ? t("Disconnect") : missing ? t("Complete setup") : t("Connect"));
+  connectBtn.disabled = connectionPending;
+  ui(connectBtn, 'title', () => !running ? missingStep(next)?.text ?? '' : '');
+  connectBtn.classList.toggle('needs-setup', !running && missing !== null);
+  $('connectIcon').setAttribute('href', !running && missing ? '#i-gear' : '#i-power');
+  connectBtn.setAttribute('aria-busy', String(connectionPending));
+  $('connectionPrerequisite').hidden = running || !missing;
+  ui($('connectionPrerequisite'), 'textContent', () => !running ? missingStep(next)?.text ?? '' : '');
+  const connectionNotice = $('connectionFeedback');
+  if (!connectionPending && connectionNotice.dataset.tone === 'busy') {
+    feedback(connectionNotice, status.detail || t(STATUS_TEXT[status.state]), failed ? 'error' : connected || status.state === 'disconnected' ? 'success' : 'busy');
+  }
 
   // ---- out of date, app or extension
   paintUpdate(next);
@@ -1006,8 +1080,8 @@ function apply(next: AppState): void {
 
   const wizConnect = $<HTMLButtonElement>('wizConnect');
   ui(wizConnect, 'textContent', () => running ? t("Disconnect") : t("Connect"));
-  wizConnect.disabled = connectBtn.disabled;
-  ui($('wizStatus'), 'textContent', () => running || failed ? status.detail || t(STATUS_TEXT[status.state]) : '');
+  wizConnect.disabled = connectionPending || (!running && missing !== null);
+  ui($('wizStatus'), 'textContent', () => running || failed ? status.detail || t(STATUS_TEXT[status.state]) : missingStep(next)?.text ?? '');
 
   $('chatgptConn').replaceChildren(
     openai
@@ -1093,8 +1167,17 @@ function apply(next: AppState): void {
     ? t("Recent activity only — no file contents, no credentials. Bundled tunnel-client {0}.", [next.bundledTunnelVersion])
     : t("Recent activity only. File contents and credentials are never recorded."));
 
-  chatApply(next, previousState?.config);
+  const identity = document.getElementById('buildIdentity');
+  if (identity && next.build) ui(identity, 'textContent', () => {
+    const info = next.build!;
+    return `${t(info.channel === 'preview' ? 'Test build' : info.channel === 'development' ? 'Development build' : 'Installed build')} ${info.version}\n${t('Companion extension')}: ${info.extensionVersion} · ${t('Protocol')}: ${info.protocolVersion}\n${t('Data directory')}: ${info.dataDirectory}\n${t('Connected extension')}: ${next.bridge.extensionVersion ?? t('Unknown')}`;
+  });
+  chatApply({ ...next, config }, previousState?.config);
+  refreshConnectionGuide?.();
 
+  for (const [control, draft] of settingsDrafts) {
+    control.value = draft.value; if (control instanceof HTMLInputElement) control.checked = draft.checked;
+  }
   applying = false;
 }
 
@@ -1479,11 +1562,40 @@ async function dropFolders(event: DragEvent): Promise<void> {
   }
 }
 
+function revealConnectionStep(name: string): void {
+  showTab('setup');
+  $<HTMLDetailsElement>('connectionDetails').open = true;
+  showAllSteps = true;
+  if (state) apply(state);
+  const target = step(name);
+  target.hidden = false;
+  target.scrollIntoView({ block: 'start', behavior: 'auto' });
+  target.tabIndex = -1;
+  target.focus({ preventScroll: true });
+}
+
 async function toggleConnection(): Promise<void> {
-  if (!state) return;
-  // Mirrors the button label exactly, so a click always does what it says.
-  const next = await run(isRunning(state.status.state) ? api.disconnect() : api.connect());
-  if (next) apply(next);
+  if (!state || connectionPending) return;
+  const running = isRunning(state.status.state);
+  const missing = missingStep(state);
+  if (!running && missing) { revealConnectionStep(missing.step); return; }
+  connectionPending = true;
+  apply(state);
+  const notice = $('connectionFeedback');
+  feedback(notice, t("Working…"), 'busy');
+  try {
+    const result = await (running ? api.disconnect() : api.connect());
+    if (!result.ok) throw new Error(result.error);
+    apply(result.data);
+    const phase = result.data.status.state;
+    feedback(notice, result.data.status.detail || t(STATUS_TEXT[phase]), ['auth-failed', 'tunnel-unavailable'].includes(phase) ? 'error' : phase === 'connected' || phase === 'disconnected' ? 'success' : 'busy');
+  } catch {
+    feedback(notice, t("Connection operation failed. Your settings are retained. Review connection settings and retry."), 'error');
+    showTab('setup');
+  } finally {
+    connectionPending = false;
+    if (state) apply(state);
+  }
 }
 
 /** Runs the main-process self-test and lists a line per link in the chain. */
@@ -1539,17 +1651,7 @@ $('closeChecks').addEventListener('click', () => {
   $('checksBox').hidden = true;
 });
 
-$('themeBtn').addEventListener('click', () => {
-  if (!state) return;
-  // A save can still be waiting on main-process lifecycle work. Toggle from the latest
-  // requested value, not merely the last acknowledged state, or two quick clicks both choose
-  // the same target and behave like one click.
-  const current = requestedSettings?.ui.theme ?? state.config.ui.theme;
-  const next = current === 'dark' ? 'light' : 'dark';
-  // Applied immediately so the click feels instant; the save confirms it.
-  document.documentElement.dataset.theme = next;
-  void save({ theme: next });
-});
+$('themeBtn').addEventListener('click', () => { showTab('appearance'); document.querySelector<HTMLButtonElement>('[data-theme-choice][aria-pressed="true"]')?.focus(); });
 
 $('readOnlyBtn').addEventListener('click', () => {
   if (!state) return;
@@ -1666,6 +1768,7 @@ for (const id of [
   'desktopTunnelId'
 ]) {
   $(id).addEventListener('change', () => void save());
+  $(id).addEventListener('blur', event => settingsDrafts.delete(event.currentTarget as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement));
 }
 
 document.addEventListener('click', (event) => {
@@ -1675,11 +1778,7 @@ document.addEventListener('click', (event) => {
 
 $('bridgeDownload').addEventListener('click', () => void run(api.downloadExtension()));
 $('updateExtension').addEventListener('click', () => {
-  showAllSteps = true;
-  if (state) apply(state);
-  showTab('setup');
-  step('browser').hidden = false;
-  step('browser').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  revealConnectionStep('browser');
 });
 
 api.onStateChanged(apply);
@@ -1692,9 +1791,37 @@ async function refresh(): Promise<void> {
 }
 
 buildGroups();
+const guide = mountConnectionGuide($('connectionOverview'), {
+  snapshot: () => ({ language: currentLanguage(), workspaceReady: !!state && (!!state.config.roots.length || !requiresApprovedFilesystemRoot(state.config)),
+    extensionReady: !!state?.bridge.present, connectorReady: state?.status.state === 'connected' && state.status.lastToolCallAt != null,
+    proxyEndpoint: state?.config.ui.proxyConnection?.endpoint }),
+  changeLanguage: async language => {
+    setLanguage(language, false);
+    const result = await api.saveLanguage(language);
+    if (!result.ok) throw new Error(result.error);
+    finishLanguageMigration();
+  },
+  navigate: section => { revealConnectionStep(section === 'workspace' ? 'folder' : section === 'extension' ? 'browser' : (state && missingStep(state)?.step) || 'chatgpt'); },
+  proxy: request => api.proxyManagement(request)
+});
+// Keep one authoritative state subscription. Test hosts and the real preload both permit
+// multiple listeners, but a second listener can silently replace a legacy single-listener
+// bridge and stop the complete settings repaint.
+refreshConnectionGuide = () => guide.refresh();
+const accountsPanel = mountAccountsPanel(document.body, { manage: request => api.accountManagement(request), language: currentLanguage });
+const profile = el('button', 'btn workspace-profile');
+profile.setAttribute('type', 'button');
+profile.append(el('span', 'profile-avatar', '知'), el('span', '', () => t('Local workspace')));
+ui(profile, 'title', () => currentLanguage() === 'zh-CN' ? '账号管理' : 'Account management');
+ui(profile, 'aria-label', () => currentLanguage() === 'zh-CN' ? '账号管理' : 'Account management');
+profile.onclick = () => accountsPanel.open();
+document.querySelector('.sidebar-bottom')!.prepend(profile);
+ui(document.querySelector('.sidebar-brand strong')!, 'textContent', () => currentLanguage() === 'zh-CN' ? '知行' : 'Chat On Steroids');
+ui(document.querySelector('title')!, 'textContent', () => currentLanguage() === 'zh-CN' ? '知行 · Chat On Steroids' : 'Chat On Steroids');
 initSidebarResize();
 initUsage();
 initPlugins(apply);
+skillsPanel = mountSkillsPanel($('skillsPanel'), () => showTab('chat'));
 initBrowserPreferences();
 initChat({ save: () => save(), state: () => state });
 

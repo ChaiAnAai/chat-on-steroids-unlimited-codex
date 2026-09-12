@@ -39,8 +39,8 @@ describe('extension release metadata', () => {
     expect(lock.version).toBe(APP_VERSION);
     expect(lock.packages?.['']?.version).toBe(APP_VERSION);
     expect(manifest.version).toBe(APP_VERSION);
-    expect(BRIDGE_PROTOCOL).toBe(13);
-    expect(backgroundSource).toContain('const BRIDGE_PROTOCOL = 13;');
+    expect(BRIDGE_PROTOCOL).toBe(14);
+    expect(backgroundSource).toContain('const BRIDGE_PROTOCOL = 14;');
   });
 
   /**
@@ -88,13 +88,8 @@ describe('extension release metadata', () => {
     expect(code).not.toMatch(/JSON\.stringify/);
   });
 
-  /**
-   * The installed popup showed "Paired · port 8765" with a green dot and, underneath it,
-   * a six-digit code field and a Pair button — a page contradicting itself about the one
-   * thing it exists to report. There is nothing to type any more, so the way to keep that
-   * from coming back is for the markup to have no field to type into.
-   */
-  it('has no pairing-code UI anywhere in the popup', async () => {
+  /** Account configuration is non-secret; redeemable pairing material stays in the worker. */
+  it('accepts only non-secret account configuration in the popup, never a legacy code or credential', async () => {
     const dir = path.join(process.cwd(), 'extension');
     const [html, js] = await Promise.all([
       fs.readFile(path.join(dir, 'popup.html'), 'utf8'),
@@ -104,6 +99,9 @@ describe('extension release metadata', () => {
     expect(html).not.toMatch(/000000|six[- ]digit|pairing code/i);
     expect(html).not.toMatch(/type=["'](?:text|number|password)["']/i);
     expect(js).not.toMatch(/\bcode\b/);
+    expect(html).toContain('id="accountConfiguration"');
+    expect(html).toContain('id="accountClaimBtn"');
+    expect(js).not.toMatch(/\bnonce\b|\bbridgeToken\b/);
     // The message the worker understands carries no code either.
     expect(js).not.toMatch(/type: 'pair'[^}]*code/);
   });
@@ -496,6 +494,7 @@ function response(status: number, data: unknown) {
 function loadWorker(options: {
   local: FakeStorageArea;
   session: FakeStorageArea;
+  webSocket?: new (url: string) => unknown;
   fetch?: (input: string, init?: Record<string, unknown>) => Promise<ReturnType<typeof response>>;
   tabsGet?: (tabId: number) => Promise<{ id?: number; url?: string; pendingUrl?: string; status?: string; autoDiscardable?: boolean }>;
   tabsQuery?: () => Promise<
@@ -546,6 +545,8 @@ function loadWorker(options: {
   const chrome = {
     storage: { local: options.local, session: options.session },
     runtime: {
+      id: 'companion-test',
+      getURL: (file: string) => `chrome-extension://companion-test/${file}`,
       getManifest: () => ({ version: '1.6.0' }),
       onMessage: {
         addListener(fn: typeof listener) {
@@ -604,6 +605,7 @@ function loadWorker(options: {
   vm.runInNewContext(backgroundSource, {
     chrome,
     fetch,
+    WebSocket: options.webSocket,
     AbortController,
     setTimeout,
     clearTimeout,
@@ -707,6 +709,7 @@ function loadWorker(options: {
       }
     },
     send(message, tabId = 1, documentId = documentFor(tabId), senderUrl) {
+      const popupControl = arguments.length === 1 && (String(message.type).startsWith('account_pair_') || message.type === 'pair' || message.type === 'unpair');
       if (message.type === 'bind' && typeof message.conversationId === 'string') {
         knownTabs.set(tabId, {
           ...knownTabs.get(tabId),
@@ -718,7 +721,7 @@ function loadWorker(options: {
       }
       return new Promise((resolve, reject) => {
         try {
-          const keep = listener!(message, { tab: { id: tabId }, documentId, frameId: 0, url: senderUrl }, resolve);
+          const keep = listener!(message, popupControl ? { id: 'companion-test', url: 'chrome-extension://companion-test/popup.html' } : { tab: { id: tabId }, documentId, frameId: 0, url: senderUrl }, resolve);
           if (keep !== true) reject(new Error('listener did not keep the response channel open'));
         } catch (err) {
           reject(err);
@@ -732,6 +735,222 @@ function journalOf(session: FakeStorageArea): any[] {
   const value = session.data.journal;
   return Array.isArray(value) ? value : [];
 }
+
+describe('popup account pairing workflow', () => {
+  const configuration = { accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', profileRef: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', browser: 'chrome', port: 8765 };
+  const nonce = 'a'.repeat(64), bridgeToken = 'b'.repeat(64);
+  it('requests then claims once after main confirmation, keeping nonce and credentials out of popup results', async () => {
+    const local = new FakeStorageArea(), session = new FakeStorageArea(); let confirmed = false; const bodies: any[] = [];
+    const worker = loadWorker({ local, session, fetch: async (input, init) => {
+      if (new URL(input).pathname === '/hello') return response(200, { app: 'chat-on-steroids' });
+      const body = JSON.parse(String(init?.body)); bodies.push(body);
+      if (body.action === 'request') return response(202, { nonce, requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', expiresAt: Date.now() + 120000 });
+      return confirmed ? response(200, { accountId: configuration.accountId, connectionVersion: 8, bridgeToken }) : response(409, { error: 'account_pairing_pending_or_invalid' });
+    } });
+    const requested = await worker.send({ type: 'account_pair_request', configuration: JSON.stringify(configuration) });
+    expect(requested).toMatchObject({ ok: true, pending: true }); expect(JSON.stringify(requested)).not.toContain(nonce);
+    expect(JSON.stringify(local.data)).not.toContain(nonce); expect((session.data.accountPairPending as any).nonce).toBe(nonce);
+    expect(await worker.send({ type: 'account_pair_claim' })).toMatchObject({ ok: false, error: 'pairing_pending_or_invalid' });
+    confirmed = true;
+    const claimed = await worker.send({ type: 'account_pair_claim' }); expect(claimed).toMatchObject({ ok: true, paired: true, identityPending: true, pending: false });
+    expect(JSON.stringify(claimed)).not.toContain(bridgeToken); expect(JSON.stringify(claimed)).not.toContain(nonce);
+    expect(local.data).toMatchObject({ token: bridgeToken, accountId: configuration.accountId, accountVersion: 8, accountIdentityPending: true }); expect(session.data.accountPairPending).toBeNull();
+    expect(await worker.send({ type: 'account_pair_claim' })).toMatchObject({ ok: false, error: 'pairing_expired' });
+    expect(bodies.filter(body => body.action === 'claim')).toHaveLength(2);
+    await worker.registerTab(7); expect(await worker.send({ type: 'settings_get' }, 7)).toMatchObject({ ok: false, error: 'account_identity_pending' });
+    expect(worker.alarmCreate).not.toHaveBeenCalled(); expect(worker.tabsCreate).not.toHaveBeenCalled();
+  });
+  it('refuses content-script connection mutations and rejects configuration with credential or arbitrary port fields', async () => {
+    const local = new FakeStorageArea({ token: 'old' }); const fetch = vi.fn(async () => response(503, {}));
+    const worker = loadWorker({ local, session: new FakeStorageArea(), fetch });
+    for (const type of ['account_pair_request', 'account_pair_claim', 'account_pair_recheck', 'account_pair_status', 'pair', 'unpair']) {
+      expect(await worker.send({ type, configuration }, 7, 'document', 'chrome-extension://companion-test/popup.html')).toMatchObject({ ok: false, error: 'popup_only' });
+    }
+    for (const extra of [{ token: 'must-not-be-stored' }, { port: 0 }, { port: 65536 }, { port: 1.5 }, { port: '9999@evil.example' }, { accountId: '../path' }]) expect(await worker.send({ type: 'account_pair_request', configuration: { ...configuration, ...extra } })).toMatchObject({ ok: false, error: 'invalid_account_configuration' });
+    expect(local.data.token).toBe('old'); expect(JSON.stringify(local.data)).not.toContain('must-not-be-stored');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('resumes an unexpired nonce only across worker suspension and refuses it after browser session expiry', async () => {
+    const local = new FakeStorageArea(), session = new FakeStorageArea();
+    const fetch = async (input: string) => new URL(input).pathname === '/hello' ? response(200, { app: 'chat-on-steroids' }) : response(202, { nonce, requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', expiresAt: Date.now() + 120000 });
+    await loadWorker({ local, session, fetch }).send({ type: 'account_pair_request', configuration });
+    expect(await loadWorker({ local, session, fetch }).send({ type: 'account_pair_status' })).toMatchObject({ pending: true, configuration });
+    (session.data.accountPairPending as any).expiresAt = Date.now() - 1;
+    expect(await loadWorker({ local, session, fetch }).send({ type: 'account_pair_claim' })).toMatchObject({ error: 'pairing_expired' });
+    expect(await loadWorker({ local, session: new FakeStorageArea(), fetch }).send({ type: 'account_pair_status' })).toMatchObject({ pending: false, configuration });
+  });
+  it('discards a late request or claim response after Disconnect without restoring pairing', async () => {
+    for (const delayedAction of ['request', 'claim']) {
+      const local = new FakeStorageArea(), session = new FakeStorageArea(); let release!: () => void; let started!: () => void;
+      const began = new Promise<void>(done => { started = done; });
+      const worker = loadWorker({ local, session, fetch: async (input, init) => {
+        if (new URL(input).pathname === '/hello') return response(200, { app: 'chat-on-steroids' });
+        const action = JSON.parse(String(init?.body)).action;
+        if (action === delayedAction) { started(); await new Promise<void>(done => { release = done; }); }
+        return action === 'request' ? response(202, { nonce, requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', expiresAt: Date.now() + 120000 }) : response(200, { accountId: configuration.accountId, connectionVersion: 8, bridgeToken });
+      } });
+      if (delayedAction === 'claim') await worker.send({ type: 'account_pair_request', configuration });
+      const pending = worker.send(delayedAction === 'request' ? { type: 'account_pair_request', configuration } : { type: 'account_pair_claim' });
+      await began; await worker.send({ type: 'unpair' }); release();
+      expect(await pending).toMatchObject({ ok: false, error: 'pairing_stale' });
+      expect(local.data).toMatchObject({ disconnected: true, token: null }); expect(session.data.accountPairPending).toBeNull();
+    }
+  });
+  it('a new request supersedes the old response and duplicate claim clicks share one request', async () => {
+    const local = new FakeStorageArea(), session = new FakeStorageArea(); let requestCount = 0, claimCount = 0;
+    let release!: () => void; let started!: () => void; const began = new Promise<void>(done => { started = done; });
+    const worker = loadWorker({ local, session, fetch: async (input, init) => {
+      if (new URL(input).pathname === '/hello') return response(200, { app: 'chat-on-steroids' });
+      const action = JSON.parse(String(init?.body)).action;
+      if (action === 'request') { requestCount++; if (requestCount === 1) { started(); await new Promise<void>(done => { release = done; }); } return response(202, { nonce: requestCount === 1 ? 'c'.repeat(64) : nonce, requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', expiresAt: Date.now() + 120000 }); }
+      claimCount++; await new Promise(done => setTimeout(done, 10)); return response(200, { accountId: configuration.accountId, connectionVersion: 8, bridgeToken });
+    } });
+    const old = worker.send({ type: 'account_pair_request', configuration }); await began;
+    expect(await worker.send({ type: 'account_pair_request', configuration })).toMatchObject({ ok: true }); release();
+    expect(await old).toMatchObject({ error: 'pairing_stale' });
+    await Promise.all([worker.send({ type: 'account_pair_claim' }), worker.send({ type: 'account_pair_claim' })]); expect(claimCount).toBe(1);
+  });
+  it('explicit recheck updates only saved epoch and keeps old receipts paused without legacy fallback', async () => {
+    const oldReceipt = { kind: 'input', id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', owner: 'old-document', conversationId: 'old-conversation', messageId: 'old-message', queuedAt: Date.now() };
+    const oldJournal = [{ conversationId: 'old-conversation', provisional: null, agent: null, agentCommandId: null, event: { kind: 'user_message', time: Date.now(), text: 'Original observation' } }];
+    const local = new FakeStorageArea({ port: 8765, token: bridgeToken, accountId: configuration.accountId, accountVersion: 3, accountSetupRequired: true, accountConfig: configuration, commandAckOutbox: [oldReceipt] });
+    const session = new FakeStorageArea({ journal: oldJournal }); const routes: string[] = [];
+    const worker = loadWorker({ local, session, fetch: async (input, init) => {
+      const route = new URL(input).pathname; routes.push(route);
+      if (route === '/hello') return response(200, { app: 'chat-on-steroids' });
+      expect(JSON.parse(String(init?.body))).toEqual({ action: 'recheck', accountId: configuration.accountId });
+      expect(init?.headers).toMatchObject({ authorization: `Bearer ${bridgeToken}` }); expect(init?.headers).not.toHaveProperty('x-account-id');
+      return response(200, { accountId: configuration.accountId, connectionVersion: 9, identityVerified: false });
+    } });
+    expect(await worker.send({ type: 'account_pair_recheck' })).toMatchObject({ paired: true, identityPending: true });
+    expect(local.data).toMatchObject({ token: bridgeToken, accountVersion: 9, accountIdentityPending: true });
+    await worker.fireAlarm(); expect(routes).not.toContain('/pair'); expect(routes.filter(route => route !== '/hello')).toEqual(['/accounts/pair']);
+    expect(local.data.commandAckOutbox).toEqual([oldReceipt]); expect(journalOf(session)).toEqual(oldJournal);
+  });
+  it('validates only the configured ephemeral loopback port without expanding discovery', async () => {
+    const urls: string[] = [];
+    const worker = loadWorker({ local: new FakeStorageArea(), session: new FakeStorageArea(), fetch: async (input, init) => {
+      urls.push(input);
+      expect(init?.redirect).toBe('error');
+      return new URL(input).pathname === '/hello' ? response(200, { app: 'chat-on-steroids' }) : response(202, { nonce, requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', expiresAt: Date.now() + 120000 });
+    } });
+    expect(await worker.send({ type: 'account_pair_request', configuration: { ...configuration, port: 41327 } })).toMatchObject({ ok: true, pending: true });
+    expect(urls).toEqual(['http://127.0.0.1:41327/hello', 'http://127.0.0.1:41327/accounts/pair']);
+  });
+});
+
+describe('account-scoped extension authentication', () => {
+  const accountId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  // Explicitly verified fixture for ingress tests; newly paired browser identities stay pending.
+  const scoped = { port: 8765, token: 'account-a-token', accountId, accountVersion: 7, accountIdentityPending: false };
+
+  it('does not send account credentials to the legacy websocket transport', async () => {
+    for (const identity of [scoped, { port: 8765, token: 'legacy-token' }]) {
+      const opened: string[] = [];
+      class WakeSocket {
+        readyState = 0;
+        constructor(public url: string) { opened.push(url); }
+        close() { this.readyState = 3; }
+      }
+      const worker = loadWorker({ local: new FakeStorageArea(identity), session: new FakeStorageArea(), webSocket: WakeSocket,
+        fetch: async input => new URL(input).pathname === '/hello'
+          ? response(200, { app: 'chat-on-steroids' }) : response(200, {}) });
+      await worker.registerTab(3);
+      expect(await worker.send({ type: 'settings_get' }, 3)).toMatchObject({ ok: true });
+      expect(opened).toHaveLength('accountId' in identity ? 0 : 1);
+    }
+  });
+
+  it('uses storage identity on requests, ignores forged page fields and preserves it across worker restart', async () => {
+    const requests: Array<{ route: string; headers: Record<string, string> }> = [];
+    const local = new FakeStorageArea(scoped);
+    const fetch = async (input: string, init: Record<string, unknown> = {}) => {
+      const route = new URL(input).pathname;
+      // Global browser disconnect is not authoritative for this account's transport.
+      if (route === '/hello') return response(200, { app: 'chat-on-steroids', disconnected: true });
+      requests.push({ route, headers: init.headers as Record<string, string> });
+      return response(200, {});
+    };
+    for (let restart = 0; restart < 2; restart++) {
+      const worker = loadWorker({ local, session: new FakeStorageArea(), fetch });
+      await worker.registerTab(3);
+      expect(await worker.send({ type: 'settings_get', accountId: 'forged-account', accountVersion: 99, token: 'forged' }, 3)).toMatchObject({ ok: true });
+    }
+    expect(requests.filter(request => request.route === '/settings')).toHaveLength(2);
+    expect(requests.some(request => request.route === '/pair')).toBe(false);
+    for (const request of requests) expect(request.headers).toMatchObject({ authorization: 'Bearer account-a-token', 'x-account-id': accountId, 'x-account-version': '7' });
+    expect(local.data).toMatchObject(scoped);
+  });
+
+  it.each(['stale_account_connection', 'unauthorised', 'browser_disconnected'])('latches scoped %s without minting a global token or retrying after restart', async error => {
+    const routes: string[] = [];
+    const local = new FakeStorageArea(scoped);
+    const session = new FakeStorageArea();
+    const fetch = async (input: string) => {
+      const route = new URL(input).pathname; routes.push(route);
+      if (route === '/hello') return response(200, { app: 'chat-on-steroids', paired: true });
+      return response(401, { error });
+    };
+    const worker = loadWorker({ local, session, fetch });
+    await worker.registerTab(3);
+    expect(await worker.send({ type: 'settings_get' }, 3)).toMatchObject({ ok: false, error: 'account_pairing_required', needsSetup: true });
+    await worker.fireAlarm();
+    const protectedCount = routes.filter(route => route !== '/hello').length;
+    const next = loadWorker({ local, session, fetch });
+    expect(await next.send({ type: 'status' })).toMatchObject({ paired: false, needsSetup: true, pairError: { error: 'account_pairing_required' } });
+    expect(await next.send({ type: 'pair' })).toMatchObject({ ok: false, needsSetup: true });
+    await next.registerTab(3);
+    await next.send({ type: 'settings_get' }, 3);
+    await next.fireAlarm();
+    expect(routes).not.toContain('/pair');
+    expect(routes.filter(route => route !== '/hello')).toHaveLength(protectedCount);
+    expect(local.data).toMatchObject({ ...scoped, accountSetupRequired: true });
+    expect(next.alarmCreate).not.toHaveBeenCalled();
+    expect(next.tabsCreate).not.toHaveBeenCalled();
+  });
+
+  it('turns the server account pairing requirement into a durable visible setup state after one attempt', async () => {
+    const routes: string[] = [];
+    const local = new FakeStorageArea();
+    const fetch = async (input: string) => {
+      const route = new URL(input).pathname; routes.push(route);
+      return route === '/hello' ? response(200, { app: 'chat-on-steroids' }) : response(409, { error: 'account_pairing_required' });
+    };
+    const worker = loadWorker({ local, session: new FakeStorageArea(), fetch });
+    const status = await worker.send({ type: 'status' });
+    expect(status).toMatchObject({ paired: false, needsSetup: true });
+    expect(status.pairError.message).toContain('two-step pairing');
+    await worker.send({ type: 'status' }); await worker.send({ type: 'pair' });
+    const restarted = loadWorker({ local, session: new FakeStorageArea(), fetch });
+    expect(await restarted.send({ type: 'status' })).toMatchObject({ needsSetup: true, paired: false });
+    await restarted.fireAlarm();
+    expect(routes.filter(route => route === '/pair')).toHaveLength(1);
+  });
+
+  it.each([{ accountId }, { accountVersion: 7 }, { accountId, accountVersion: '7' }, { accountId: 'invalid', accountVersion: 7 }])('fails closed for incomplete or malformed stored account identity %j', async identity => {
+    const routes: string[] = [];
+    const local = new FakeStorageArea({ port: 8765, token: 'old-token', ...identity });
+    const worker = loadWorker({ local, session: new FakeStorageArea(), fetch: async input => {
+      routes.push(new URL(input).pathname);
+      return response(200, { app: 'chat-on-steroids' });
+    } });
+    expect(await worker.send({ type: 'status' })).toMatchObject({ needsSetup: true, paired: false });
+    expect(await worker.send({ type: 'pair' })).toMatchObject({ needsSetup: true });
+    expect(routes.every(route => route === '/hello')).toBe(true);
+    expect(local.data.token).toBe('old-token');
+  });
+
+  it('shows account setup rather than connecting in the shipped popup', async () => {
+    const popup = await fs.readFile(path.join(process.cwd(), 'extension', 'popup.js'), 'utf8');
+    const nodes = new Map<string, Record<string, unknown>>();
+    const $ = (id: string) => { if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id)!; };
+    const code = popup.slice(popup.indexOf('function paintHeader('), popup.indexOf('function paintAlert('));
+    const ready = vm.runInNewContext(`${code}; paintHeader({ connected: true, compatible: true, port: 8765, paired: false, needsSetup: true });`, { $ });
+    expect(ready).toBe(false);
+    expect($('state').textContent).toBe('Account setup required');
+    expect($('retryBtn').hidden).toBe(true);
+  });
+});
 
 describe('accepted helper tab cleanup', () => {
   for (const outcome of ['accepted', 'rejected', 'navigated', 'pinned', 'busy', 'draft', 'pinned-during-proof'] as const) {
@@ -1115,7 +1334,7 @@ describe('active agent tab discard protection', () => {
     expect(session.data.discardProtectedTabs).toEqual({});
   });
 
-  it('closes finished managed chats including an idle selected tab', async () => {
+  it('retires only an unused superseded page while retaining the selected page and idle workers', async () => {
     const OLD_WORKER = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
     const COMPACTED = 'cccccccc-dddd-4eee-8fff-000000000000';
     const fetch = vi.fn(async (input: string) => {
@@ -1151,7 +1370,7 @@ describe('active agent tab discard protection', () => {
     });
 
     await worker.fireAlarm();
-    expect(worker.tabsRemove.mock.calls.map((call) => call[0]).sort()).toEqual([92, 93, 94]);
+    expect(worker.tabsRemove.mock.calls.map((call) => call[0]).sort()).toEqual([94]);
     // The live prime chat is still protected, never closed.
     expect(worker.tabsUpdate).toHaveBeenCalledWith(91, { autoDiscardable: false });
   });
@@ -1208,45 +1427,45 @@ describe('app-owned retained tab pool', () => {
     await worker.fireAlarm();
     return worker;
   }
-  it('retains sleeping chats regardless of broker capacity and removes only an exact idle duplicate', async () => {
+  it('retains sleeping chats and duplicate user tabs regardless of broker capacity', async () => {
     const worker = await budget();
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([4]);
+    expect(worker.tabsRemove).not.toHaveBeenCalled();
     expect(worker.tabsRemove).not.toHaveBeenCalledWith(1); // live app work
     expect(worker.tabsRemove).not.toHaveBeenCalledWith(6); // unrelated manual chat
   });
   it('preserves a user-pinned duplicate while still retiring an unpinned terminal worker', async () => {
     const worker = await budget({ pinned: 4, retired: true });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([2, 5]);
+    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([2]);
   });
   it('retires explicitly terminal workers while preserving drafts and live work', async () => {
     const worker = await budget({ keep: 20, retired: true, safe: n => n !== 5 });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([4, 2]);
+    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([2]);
     expect(worker.tabsRemove).not.toHaveBeenCalledWith(5);
     expect(worker.tabsRemove).not.toHaveBeenCalledWith(1);
   });
-  it('keeps idle conversations below the pool limit while removing an idle duplicate', async () => {
+  it('keeps idle conversations and duplicate pages below the pool limit', async () => {
     const worker = await budget({ keep: 20 });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([4]);
+    expect(worker.tabsRemove).not.toHaveBeenCalled();
   });
   it('keeps waiting prime and helper tabs as well as reusable worker tabs', async () => {
     const worker = await budget({ ordinary: 1 });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([4]);
+    expect(worker.tabsRemove).not.toHaveBeenCalled();
   });
-  it('releases idle pages independently of worker capacity while keeping the selected page', async () => {
+  it('rejects legacy idle-close grants without explicit retirement, including duplicate pages', async () => {
     const worker = await budget({ keep: 20, idle: true });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([4, 2, 3]);
+    expect(worker.tabsRemove).not.toHaveBeenCalled();
   });
   it('does not use tab selection as model activity', async () => {
     const worker = await budget({ recent: 5 });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([4]);
+    expect(worker.tabsRemove).not.toHaveBeenCalled();
   });
   it('never removes copies of a protected active conversation', async () => {
     const worker = await budget({ protectDuplicate: true, retired: true });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0]).sort()).toEqual([2, 5]);
+    expect(worker.tabsRemove.mock.calls.map(call => call[0]).sort()).toEqual([2]);
   });
   it('orders terminal retirement by work time without evicting other waiting chats', async () => {
     const worker = await budget({ reverseActivity: true, recent: 5, retired: true });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([4, 5, 2]);
+    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([2]);
   });
   it('retains drafts/unreadable pages and refuses a navigated candidate', async () => {
     const worker = await budget({ safe: n => n !== 3 && n !== 4, changed: 5, retired: true });
@@ -1645,7 +1864,7 @@ describe('extension command delivery', () => {
     const session = new FakeStorageArea();
     const worker = loadWorker({ local, session });
     worker.tabsQuery.mockResolvedValueOnce([{ id: 41 }]);
-    worker.tabsSendMessage.mockResolvedValueOnce({ ok: true, recorderVersion: 11 });
+    worker.tabsSendMessage.mockResolvedValueOnce({ ok: true, recorderVersion: 12 });
 
     await worker.installed('update');
 
@@ -1776,7 +1995,7 @@ describe('extension revival delivery', () => {
 
   const liveRecorder = async (_tabId: number, message: Record<string, unknown>) =>
     message.type === 'clf-recorder-ping'
-      ? { ok: true, recorderVersion: 11 }
+      ? { ok: true, recorderVersion: 12 }
       : { ok: true, claimed: true };
 
   it('scans before opening and routes to the oldest exact worker tab', async () => {
@@ -3612,7 +3831,7 @@ it.each(['matching', 'wrong-document', 'unsafe-draft', 'newer-navigation', 'pinn
   if (scenario === 'matching') expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({ cancelledDecisions: claims });
 });
 
-it.each(['idle', 'selected', 'selected-before-proof', 'selected-during-proof', 'draft', 'pinned', 'navigation', 'journal'])('releases an idle page only while its document remains unused: %s', async scenario => {
+it.each(['idle', 'selected', 'selected-before-proof', 'selected-during-proof', 'draft', 'pinned', 'navigation', 'journal'])('retires a page only while its document remains unused: %s', async scenario => {
   const conversationId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
   const tab = { id: 71, url: `https://chatgpt.com/c/${conversationId}`, active: scenario === 'selected', pinned: scenario === 'pinned' };
   const remove = vi.fn();
@@ -3631,6 +3850,6 @@ it.each(['idle', 'selected', 'selected-before-proof', 'selected-during-proof', '
     chrome: { tabs: { get: async () => ({ ...tab, active: tab.active || scenario === 'selected-before-proof',
       ...(scenario === 'navigation' && probed ? { pendingUrl: 'https://chatgpt.com/' } : {}) }), remove } }
   });
-  await prune([tab], { managedConversations: [conversationId] }, new Set(), new Set([conversationId]));
+  await prune([tab], { managedConversations: [conversationId], retiredConversations: [conversationId] }, new Set());
   expect(remove).toHaveBeenCalledTimes(scenario === 'idle' ? 1 : 0);
 });

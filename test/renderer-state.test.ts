@@ -276,11 +276,10 @@ it('serializes settings intent so rapid toggles and later UI changes cannot undo
 
   // Theme has the same no-form-control shape. Two rapid clicks must request dark then light,
   // even though the first dark save has not answered yet.
-  const theme = w.document.getElementById('themeBtn') as HTMLButtonElement;
-  theme.click();
+  (w.document.querySelector('[data-theme-choice="dark"]') as HTMLButtonElement).click();
   await vi.waitFor(() => expect(calls).toHaveLength(4));
   expect(calls[3].ui.theme).toBe('dark');
-  theme.click();
+  (w.document.querySelector('[data-theme-choice="light"]') as HTMLButtonElement).click();
   expect(calls).toHaveLength(4);
 
   current = appState({ ...baseConfig, readOnly: false, ui: { ...baseConfig.ui, autoConnect: true, theme: 'dark' } });
@@ -638,7 +637,8 @@ const catalogue = (count: number) =>
   }));
 
 it('guides rootless setup from the capabilities that actually need a filesystem root', async () => {
-  const mounted = await mountChat({ hasApiKey: true });
+  const connectCall = vi.fn();
+  const mounted = await mountChat({ hasApiKey: true }, [], { connect: connectCall });
   const mixed = structuredClone(mounted.state) as any;
   mixed.hasApiKey = true;
   mixed.config.roots = [];
@@ -661,15 +661,22 @@ it('guides rootless setup from the capabilities that actually need a filesystem 
 
   mounted.push(mixed);
   const connect = mounted.window.document.getElementById('connectBtn') as HTMLButtonElement;
-  expect(connect.disabled).toBe(true);
+  expect(connect.disabled).toBe(false);
+  expect(connect.textContent).toContain('Complete setup');
+  expect((mounted.window.document.getElementById('wizConnect') as HTMLButtonElement).disabled).toBe(true);
   expect(connect.title).toContain('Choose a folder');
+  connect.click();
+  expect(connectCall).not.toHaveBeenCalled();
+  expect((mounted.window.document.getElementById('connectionDetails') as HTMLDetailsElement).open).toBe(true);
+  expect(mounted.window.document.activeElement?.getAttribute('data-step')).toBe('folder');
   expect(mounted.window.document.querySelector('[data-step="folder"]')?.classList.contains('is-current')).toBe(true);
 
   const commandAndDesktop = structuredClone(mixed) as any;
   commandAndDesktop.config.capabilities.browse = false;
   commandAndDesktop.config.capabilities.command = true;
   mounted.push(commandAndDesktop);
-  expect(connect.disabled).toBe(true);
+  expect(connect.disabled).toBe(false);
+  expect((mounted.window.document.getElementById('wizConnect') as HTMLButtonElement).disabled).toBe(true);
   expect(connect.title).toContain('Choose a folder');
 
   const desktopOnly = structuredClone(mixed) as any;
@@ -684,6 +691,50 @@ it('guides rootless setup from the capabilities that actually need a filesystem 
   clipboardOnly.status.surfaces[1].tools = ['computer'];
   mounted.push(clipboardOnly);
   expect(connect.disabled).toBe(false);
+});
+
+it('reconciles setup language and prerequisite copy when startup language arrives after state', async () => {
+  let resolveLanguage!: (result: any) => void;
+  const saveLanguage = vi.fn(() => new Promise(resolve => { resolveLanguage = resolve; }));
+  const mounted = await mountChat({}, [], { saveLanguage });
+  const next = structuredClone(mounted.state);
+  next.config.roots = [];
+  mounted.push(next);
+  const doc = mounted.window.document;
+  const select = doc.querySelector<HTMLSelectElement>('.connection-guide-language-select')!;
+  expect(select.value).toBe('en');
+  resolveLanguage({ ok: true, data: 'zh-CN' });
+  await vi.waitFor(() => expect(select.value).toBe('zh-CN'));
+  expect(doc.documentElement.lang).toBe('zh-CN');
+  expect(doc.getElementById('connectionPrerequisite')?.textContent).toContain('文件夹');
+  expect(doc.getElementById('connectBtn')?.title).toContain('文件夹');
+  const settingsLanguage = doc.getElementById('uiLanguage') as HTMLSelectElement;
+  settingsLanguage.value = 'en';
+  settingsLanguage.dispatchEvent(new mounted.window.Event('change'));
+  expect(select.value).toBe('en');
+  expect(doc.getElementById('connectionPrerequisite')?.textContent).toContain('Choose a folder');
+});
+
+it('keeps connection failures visible and prevents duplicate requests while IPC is pending', async () => {
+  let reject!: (error: Error) => void;
+  const connect = vi.fn(() => new Promise((_resolve, fail) => { reject = fail; }));
+  const mounted = await mountChat({ hasApiKey: true }, [], { connect });
+  const doc = mounted.window.document;
+  const header = doc.getElementById('connectBtn') as HTMLButtonElement;
+  header.click(); header.click();
+  expect(connect).toHaveBeenCalledTimes(1);
+  expect(header.disabled).toBe(true);
+  expect(header.getAttribute('aria-busy')).toBe('true');
+  mounted.push(structuredClone(mounted.state));
+  expect(header.disabled).toBe(true);
+  reject(new Error('IPC transport failed'));
+  await vi.waitFor(() => expect(header.disabled).toBe(false));
+  expect(doc.getElementById('connectionFeedback')?.getAttribute('role')).toBe('alert');
+  expect(doc.getElementById('connectionFeedback')?.textContent).toContain('settings are retained');
+  mounted.push(structuredClone(mounted.state));
+  expect(doc.getElementById('connectionFeedback')?.textContent).toContain('settings are retained');
+  expect(doc.querySelectorAll('[data-panel="setup"] .language-tabs')).toHaveLength(0);
+  expect(doc.querySelector('.sheet #connectionOverview .connection-guide')).not.toBeNull();
 });
 
 it('keeps folder access discoverable after setup and navigates without granting access', async () => {
@@ -795,7 +846,7 @@ it('says nothing about being current until the check has actually answered', asy
   expect(line.hidden).toBe(false);
   expect(line.className).toBe('upline is-ok');
   expect(line.textContent).toBe('Up to date! Chat On Steroids 2.0.2 · extension 2.0.2');
-  expect(doc.querySelector('.toast')!.textContent).toBe(line.textContent);
+  expect(doc.querySelector('.toast > span')!.textContent).toBe(line.textContent);
   // Nothing to act on, so the header bar stays out of the way.
   expect(doc.getElementById('updateNotice')!.hidden).toBe(true);
 

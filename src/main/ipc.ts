@@ -1,3 +1,6 @@
+import { resolvedTheme, appearanceSchema, DEFAULT_APPEARANCE } from '../shared/appearance.js';
+import { buildIdentity } from './build-identity.js';
+import { manageSkills } from './skills/runtime.js';
 import { applyLoginStartup, supportsLoginStartup } from './window-lifecycle.js';
 import { prepareSessionPrompt } from './session/prompt.js';
 import { noteChatOrigin } from './session/recorder.js';
@@ -32,6 +35,7 @@ import { registerPluginIpc } from './plugins-ipc.js';
  */
 
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
+import { writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import {
   CAPABILITIES,
@@ -50,12 +54,18 @@ import { forgetExposedSurface } from './mcp/server.js';
 import { runDiagnostics } from './diagnostics.js';
 import { formatLogAsJson, formatLogForClipboard, getLog, logInfo, onLog } from './logger.js';
 import { RESERVED_ROOT_NAMES, uniqueRootName, validateNewRoot, SandboxError, resolvePath } from './sandbox.js';
-import { addProject, listProjects, removeProject } from './projects.js';
+import { addProject, listProjects, removeProject, selectProjectSession } from './projects.js';
+import { createProxyManagement } from './proxy-management.js';
+import { createAccountManagement } from './account-management.js';
+import { readInstallerLanguage } from './installer-language.js';
+import { controlWorkflow, clearConnectionRestriction, connectionRestriction } from './session/workflow.js';
 import { hasSecret, isEncryptionAvailable, secureStorageStatus, setSecret } from './secrets.js';
 import { bundledVersion, locateBinary } from './tunnel/locate.js';
 import { TUNNEL_ID_PATTERN } from './tunnel/index.js';
 import {
   bridgeStatus,
+  bridgePort,
+  hasPendingChatCreation,
   sessionActivityExpiresAt,
   sessionInputActivity,
   sessionControlsFor, stopSessionTurn, setSessionAutomation, setSessionObjective, compactSession, cancelSessionCompaction,
@@ -132,6 +142,7 @@ const settingsPatch = z.object({
     binaryPath: z.string().max(4096)
   }),
   ui: z.object({
+    language: z.enum(['en', 'zh-CN']).optional(),
     chatBrowser: z.enum(CHAT_BROWSERS).optional(),
     developerMode: z.boolean().optional(),
     finishTool: z.boolean().optional(),
@@ -146,7 +157,8 @@ const settingsPatch = z.object({
     autoConnect: z.boolean(),
     startAtLogin: z.boolean().optional(),
     privacyScreenshots: z.boolean(),
-    theme: z.enum(['light', 'dark'])
+    appearance: appearanceSchema.optional(),
+    theme: z.enum(['light', 'dark', 'system'])
   }),
   sessions: z.object({
     record: z.boolean(),
@@ -267,6 +279,10 @@ function mergeSettings(current: Config, base: SettingsSnapshot, wanted: Settings
         base.ui.privacyScreenshots,
         wanted.ui.privacyScreenshots
       ),
+      appearance: Object.fromEntries(Object.keys(DEFAULT_APPEARANCE).map(key => {
+        const k = key as keyof typeof DEFAULT_APPEARANCE;
+        return [k, pick(current.ui.appearance?.[k] ?? DEFAULT_APPEARANCE[k], base.ui.appearance?.[k] ?? DEFAULT_APPEARANCE[k], wanted.ui.appearance?.[k] ?? DEFAULT_APPEARANCE[k])];
+      })) as typeof DEFAULT_APPEARANCE,
       theme: pick(current.ui.theme, base.ui.theme, wanted.ui.theme)
     },
     sessions: {
@@ -346,6 +362,7 @@ function resolvedBinary(config: Config): string | null {
 async function buildState(): Promise<AppState> {
   const config = getConfig();
   return {
+    build: buildIdentity(),
     config,
     status: getStatus(),
     platform: hostPlatformInfo(),
@@ -363,9 +380,11 @@ async function buildState(): Promise<AppState> {
 }
 
 /** Wraps a handler so a thrown error becomes a message the UI can show. */
+let trustedRendererWindow: () => BrowserWindow | null = () => null;
 function handle<T>(channel: string, fn: (payload: unknown) => Promise<T>): void {
   ipcMain.handle(channel, async (_event, payload: unknown) => {
     try {
+      if (_event?.sender && (_event.sender !== trustedRendererWindow()?.webContents || (_event.senderFrame && _event.senderFrame !== _event.sender.mainFrame))) throw new Error('IPC is only available to the trusted application window');
       return { ok: true as const, data: await fn(payload) };
     } catch (err) {
       const message =
@@ -381,8 +400,12 @@ function handle<T>(channel: string, fn: (payload: unknown) => Promise<T>): void 
   });
 }
 
-export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall: () => void): void {
+export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall: () => void, preferencesChanged: () => void = () => undefined): void {
+  trustedRendererWindow = getWindow;
+  const proxyManagement = createProxyManagement({ getSettings: () => getConfig().ui.proxyConnection,
+    saveSettings: async settings => { await updateConfig(config => ({ ...config, ui: { ...config.ui, proxyConnection: settings } })); } });
   registerPluginIpc(handle, getWindow);
+  handle('skills:manage', manageSkills);
   handle('usage:get', () => usageOverview());
   handle('state:get', async () => {
     const state = await buildState();
@@ -394,6 +417,14 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
   });
 
   handle('settings:save', async (payload) => {
+    if (payload && typeof payload === 'object' && 'languageOnly' in payload) {
+      const value = z.object({ languageOnly: z.enum(['en', 'zh-CN']).optional(), migrate: z.boolean().optional() }).parse(payload);
+      const language = value.migrate ? getConfig().ui.language ?? value.languageOnly ?? await readInstallerLanguage(process.resourcesPath) ?? (app.getLocale().startsWith('zh') ? 'zh-CN' : 'en') : value.languageOnly;
+      if (!language) throw new Error('Choose a language');
+      await updateConfig(config => ({ ...config, ui: { ...config.ui, language } }));
+      preferencesChanged();
+      return language;
+    }
     const request = settingsSave.parse(payload);
     const before = getConfig();
     const next = await updateConfig(async config => {
@@ -410,12 +441,12 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     // Without this, selecting Dark on macOS left the title bar, menus and file picker in the
     // system theme until restart (and startup still defaulted to system before index.ts applies it).
     nativeTheme.themeSource = next.ui.theme;
-    if (process.platform === 'win32') getWindow()?.setTitleBarOverlay(titleBarOverlayForTheme(next.ui.theme));
+    if (process.platform === 'win32') getWindow()?.setTitleBarOverlay(titleBarOverlayForTheme(resolvedTheme(next.ui.theme, nativeTheme.shouldUseDarkColors)));
     // BrowserWindow's native backing color is fixed at construction unless updated explicitly.
     // Keep it in lock-step too: the default macOS application menu exposes Reload, and after a
     // live theme switch an old opposite background otherwise flashes behind the renderer while it
     // paints again. This is also the color Electron shows during any later renderer reload/failure.
-    getWindow()?.setBackgroundColor(next.ui.theme === 'dark' ? '#0e0e11' : '#ffffff');
+    getWindow()?.setBackgroundColor(resolvedTheme(next.ui.theme, nativeTheme.shouldUseDarkColors) === 'dark' ? '#181a1d' : '#ffffff');
     if (
       before.goal.enabled !== next.goal.enabled ||
       // The mode is authority too: a draft started as a gate must not be typed after the user
@@ -517,7 +548,13 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     return approveRoot(result.filePaths[0]);
   });
 
-  handle('projects:list', () => listProjects());
+  handle('projects:list', async payload => {
+    if (payload) {
+      const { id, sessionId } = z.object({ id: z.string().uuid(), sessionId: z.string().min(8).max(64).optional() }).parse(payload);
+      await selectProjectSession(id, sessionId);
+    }
+    return listProjects();
+  });
   handle('projects:remove', async (payload) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(payload);
     const project = await removeProject(id);
@@ -736,8 +773,16 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
   });
 
   handle('sessions:image', async (payload) => {
-    const { id, assetId } = z.object({ id: z.string().min(8).max(64).regex(/^[0-9a-z-]+$/i), assetId: z.string().max(100).regex(/^[a-f0-9]{8,64}\.(?:bin|png|jpg)$/) }).parse(payload);
-    return recordedInputImage(id, assetId);
+    const { id, assetId, action } = z.object({ id: z.string().min(8).max(64).regex(/^[0-9a-z-]+$/i), assetId: z.string().max(100).regex(/^[a-f0-9]{8,64}\.(?:bin|png|jpg)$/), action: z.literal('save').optional() }).parse(payload);
+    const image = await recordedInputImage(id, assetId);
+    if (action !== 'save') return image;
+    if (!image) throw new Error('The recorded image is unavailable. Open its original message.');
+    const match = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/=]+)$/.exec(image);
+    if (!match) throw new Error('This asset cannot be saved as an image.');
+    const result = await dialog.showSaveDialog({ defaultPath: `image.${match[1] === 'jpeg' ? 'jpg' : match[1]}`, filters: [{ name: 'Image', extensions: [match[1] === 'jpeg' ? 'jpg' : match[1]!] }] });
+    if (result.canceled || !result.filePath) return false;
+    await writeFile(result.filePath, Buffer.from(match[2]!, 'base64'));
+    return true;
   });
   handle('sessions:events', async (payload) => {
     const { id, from, before, limit } = z
@@ -803,9 +848,25 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     return requestSessionFinishGoal(id, expectedTurnId);
   });
   handle('chatModels:get', async () => getChatModels());
-  handle('browser:preferences', async (payload) => requestBrowserPreferences(payload));
-  handle('chatModels:request', async () => startChatModelDiscovery());
-  handle('sessions:controls', async (payload) => sessionControlsFor(sessionIdArg.parse(payload).id));
+  handle('browser:preferences', async (payload) => {
+    if (payload && typeof payload === 'object' && 'accounts' in payload) {
+      const manage = createAccountManagement({ userDataPath: app.getPath('userData'), bridgePort: () => bridgePort(),
+        openProfile: async (account, profileDirectory, profileName) => {
+          await openInPreferredBrowser('https://chatgpt.com/', { browser: account.browser, profileDirectory, profileName });
+        } });
+      return manage((payload as { accounts: import('../shared/accounts.js').AccountManagementRequest }).accounts);
+    }
+    if (payload && typeof payload === 'object' && 'proxy' in payload) return proxyManagement((payload as { proxy: import('../shared/proxy-management.js').ProxyManagementRequest }).proxy);
+    return requestBrowserPreferences(payload);
+  });
+  handle('chatModels:request', async () => startChatModelDiscovery(getConfig().goal.executionPolicy === 'legacy-helper'));
+  handle('sessions:controls', async (payload) => {
+    const { id, action } = sessionIdArg.extend({ action: z.enum(['resume', 'resume-connection']).optional() }).parse(payload);
+    if (action === 'resume-connection') await clearConnectionRestriction((await getSession(id))?.accountId);
+    if (action) await controlWorkflow(id, 'resume');
+    const controls = await sessionControlsFor(id);
+    return { ...controls, workflow: (await getSession(id))?.workflow, restriction: await connectionRestriction((await getSession(id))?.accountId) };
+  });
   handle('sessions:automation', async (payload) => {
     const { id, automation } = sessionIdArg.extend({ automation: z.enum(['off', 'goal', 'loop']) }).parse(payload);
     return setSessionAutomation(id, automation);
@@ -1016,6 +1077,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     target.webContents.send(channel, ...args);
   };
   configureInputDelivery({
+    canCreateChat: () => !hasPendingChatCreation(),
     activity: sessionInputActivity,
     wakeDecision: async (entry, signal) => {
       signal.throwIfAborted();
@@ -1033,6 +1095,11 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     changed: () => push('session:changed'),
     recordDelivered: (entry) => getConfig().sessions.record ? recordDeliveredInput(entry) : Promise.resolve(true),
     prepareText: async (entry, limits) => {
+      if (getConfig().goal.executionPolicy !== 'legacy-helper') {
+        const intent = entry.intent === 'plan' ? 'Only plan: use reads and searches as needed, and update_plan. Do not execute or modify files. Wait for the user to select Execute plan.' : 'Work in this conversation. Do not create planning or judgment helpers. Use update_plan when a plan helps.';
+        const text = `${entry.text}\n\n[Local workflow]\n${intent}\nFor goal continuation, read session to obtain the current workflow revision, then report session(action="checkpoint") with a concrete result, next step, evidence, and outcome before ending.`;
+        return !entry.sessionId && !entry.conversationId ? prepareSessionPrompt(text, entry, limits) : text;
+      }
       const control = entry.conversationId ? goalSwitchFor(entry.conversationId) : getConfig().goal;
       const mode = entry.automation ?? (control.enabled ? control.mode : 'off');
       const text = mode === 'goal' && goalBackendFor('goal') === 'templates' && !entry.text.includes(GOAL_MARKER_INSTRUCTION)
@@ -1043,6 +1110,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
         ? prepareSessionPrompt(text, entry, limits) : text;
     },
     applyAutomation: async (conversationId, automation, phase, objective) => {
+      if (getConfig().goal.executionPolicy !== 'legacy-helper') return;
       // This message supersedes the old final; never pick that old final up merely
       // because the composer enabled Goal for the next turn.
       const mode = automation === 'off' ? goalSwitchFor(conversationId).mode : automation;

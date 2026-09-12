@@ -1,0 +1,22 @@
+.artifact-card { width: fit-content; max-width: min(100%, 480px); min-width: 0; box-sizing: border-box; margin-block: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); }
+.artifact-name { overflow-wrap: anywhere; min-width: 0; }
+.artifact-footer { display: flex; align-items: center; gap: 8px; }
+.artifact-footer .artifact-name { flex: 1; font-size: 12px; font-weight: 500; }
+.artifact-card.has-preview { width: min(100%, var(--preview-width, 240px)); padding: 0; }
+.artifact-card.has-preview .artifact-footer { padding: 4px 8px; border-top: 1px solid var(--line); }
+.artifact-card.has-preview .artifact-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-card.has-preview > .artifact-status { margin: 8px; }
+.artifact-card.has-preview .artifact-actions { flex: 0 0 auto; flex-wrap: nowrap; gap: 2px; }
+.artifact-card.has-preview .artifact-actions .btn { width: 32px; height: 32px; padding: 0; justify-content: center; }
+.artifact-status { color: var(--soft); margin-block: 5px; font-size: .92em; overflow-wrap: anywhere; }
+.artifact-status[data-tone='error'] { color: var(--red); }
+.artifact-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.artifact-actions .btn { min-width: 32px; min-height: 32px; }
+.artifact-preview { display: flex; justify-content: center; width: 100%; min-width: 0; height: auto; padding: 0; border-radius: 9px 9px 0 0; cursor: zoom-in; }
+.artifact-thumbnail { display: block; width: auto; max-width: 100%; max-height: 180px; object-fit: contain; border-radius: inherit; }
+/* Zoom, pan, keyboard and focus behavior come from the pinned PhotoSwipe component. */
+.artifact-gallery .pswp__artifact-title { color: #fff; flex: 1; min-width: 0; padding: 18px; overflow-wrap: anywhere; }
+.artifact-gallery .pswp__button--artifact-save { color: #fff; width: auto; padding-inline: 12px; font: inherit; }
+.artifact-gallery .pswp__artifact-save-status { position: absolute; bottom: 16px; left: 16px; right: 16px; padding: 12px; color: #fff; background: #222; border-radius: 8px; }
+.artifact-gallery .pswp__artifact-save-status[data-tone='error'] { border: 1px solid #ff9299; }
+.artifact-card :focus-visible, .artifact-gallery :focus-visible { outline: 2px solid var(--ink, #fff); outline-offset: 3px; }

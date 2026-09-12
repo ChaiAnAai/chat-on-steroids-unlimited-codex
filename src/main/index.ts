@@ -14,7 +14,8 @@ import { unifiedExecManager } from './codex/manager.js';
 import { initSecretsPath } from './secrets.js';
 import { pluginManager } from './plugins/manager.js';
 import { setBrowserOpener, setBrowserWorkArea, shutdownBridge, startBridge } from './bridge.js';
-import { flushSessions, initSessionStore, pruneSessions } from './session/store.js';
+import { flushSessions, initSessionStore, pruneSessions, setCommittedSessionEventListener } from './session/store.js';
+import { processWorkflowEvent, pauseRestoredWorkflows } from './session/workflow.js';
 import {
   flushRecorder,
   queueDeterministicAttributionRepair,
@@ -87,6 +88,12 @@ let shutdownStarted = false;
 let shutdownComplete = false;
 let stopSessionRetention: (() => void) | null = null;
 
+// Explicit test launch keeps durable data and OS startup settings separate from the installed app.
+const uiPreview = process.argv.includes('--ui-preview') || app.getVersion().includes('-accounts-preview.');
+if (uiPreview) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Chat On Steroids UI Preview'));
+  process.env.CLF_BRIDGE_PORTS = '0';
+}
 // One instance only: two copies would fight over the tunnel and the config file.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -108,11 +115,11 @@ function createWindow(): void {
     autoHideMenuBar: true,
     ...(process.platform === 'win32' ? {
       titleBarStyle: 'hidden' as const,
-      titleBarOverlay: titleBarOverlayForTheme(getConfig().ui.theme)
+      titleBarOverlay: titleBarOverlayForTheme(nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
     } : {}),
     // Painted before the renderer loads, so a dark window never flashes white.
-    backgroundColor: getConfig().ui.theme === 'dark' ? '#0e0e11' : '#ffffff',
-    title: 'Chat On Steroids',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#181a1d' : '#ffffff',
+    title: getConfig().ui.language === 'zh-CN' ? '知行 · Chat On Steroids' : 'Chat On Steroids',
     webPreferences: {
       zoomFactor: UI_BASE_ZOOM,
       preload: path.join(__dirname, '../preload/index.js'),
@@ -130,7 +137,7 @@ function createWindow(): void {
   // First use discovers the account once. A restored catalog is immediately usable;
   // showing the window again cannot refresh it or open another browser attempt.
   window.on('show', () => {
-    if (!quitting && getChatModels().state === 'unknown') void startChatModelDiscovery(true)
+    if (!quitting && !uiPreview && getChatModels().state === 'unknown') void startChatModelDiscovery(false)
       .catch(error => logWarn(`model discovery on window open: ${error.message}`));
   });
   window.once('ready-to-show', () => {
@@ -259,21 +266,22 @@ function refreshTray(): void {
   const offline = state === 'offline';
   // Offline keeps the running icon: the bridge is up, the internet is not.
   const running = connected || offline;
-  const label = connected ? 'Connected' : offline ? 'No internet' : 'Not connected';
+  const chinese = getConfig().ui.language === 'zh-CN';
+  const label = chinese ? connected ? '已连接' : offline ? '网络离线' : '未连接' : connected ? 'Connected' : offline ? 'No internet' : 'Not connected';
   tray.setImage(trayIcon(running));
-  tray.setToolTip(`Chat On Steroids — ${label.toLowerCase()}`);
+  tray.setToolTip(`${chinese ? '知行 · ' : ''}Chat On Steroids — ${label.toLowerCase()}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label, enabled: false },
       { type: 'separator' },
-      { label: 'Open', click: windowActivation.request },
+      { label: chinese ? '打开知行' : 'Open', click: windowActivation.request },
       {
-        label: running ? 'Disconnect' : 'Connect',
+        label: chinese ? running ? '断开连接' : '连接' : running ? 'Disconnect' : 'Connect',
         click: () => void (running ? disconnect() : connect())
       },
       { type: 'separator' },
       {
-        label: 'Quit',
+        label: chinese ? '退出' : 'Quit',
         click: () => {
           quitting = true;
           app.quit();
@@ -303,14 +311,22 @@ void app.whenReady().then(async () => {
   await restoreChatModels();
   if (windowActivation.isDisabled()) return;
   await loadConfig();
+  await pauseRestoredWorkflows();
+  setCommittedSessionEventListener(processWorkflowEvent);
   await pluginManager.initialize(userData);
   if (windowActivation.isDisabled()) return;
-  try { applyLoginStartup(app, getConfig().ui.startAtLogin === true); }
+  try { if (!uiPreview) applyLoginStartup(app, getConfig().ui.startAtLogin === true); }
   catch (error) { logWarn(`Windows login startup: ${error instanceof Error ? error.message : String(error)}`); }
   // The renderer has its own explicit light/dark palette, so native chrome must follow the same
   // user choice instead of Electron's default `system` theme. On macOS this controls the window
   // frame, application menus and OS dialogs; on Linux/Windows it covers Electron-native UI.
   nativeTheme.themeSource = getConfig().ui.theme;
+  nativeTheme.on('updated', () => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (process.platform === 'win32') window.setTitleBarOverlay(titleBarOverlayForTheme(nativeTheme.shouldUseDarkColors ? 'dark' : 'light'));
+      window.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#181a1d' : '#ffffff');
+    }
+  });
   const savedGoalObjectives = await readDurable<GoalObjectivesSnapshot>(GOAL_OBJECTIVES_STATE);
   if (windowActivation.isDisabled()) return;
   restoreGoalObjectives(savedGoalObjectives);
@@ -413,7 +429,8 @@ void app.whenReady().then(async () => {
     () => {
       quitting = true;
       app.quit();
-    }
+    },
+    refreshTray
   );
   windowActivation.enable();
   if (!isBackgroundLaunch(process.argv)) windowActivation.request();
@@ -456,7 +473,7 @@ void app.whenReady().then(async () => {
   // window that is already on screen. Everything it learns arrives through the ordinary state
   // push, every failure ends inside it, and its own timer keeps it running for a tray app that
   // is never restarted.
-  startUpdateChecks();
+  if (!uiPreview) startUpdateChecks();
 });
 
 app.on('before-quit', () => {

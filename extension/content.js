@@ -41,7 +41,7 @@
   //
   // So: publish a handle instead of a flag and let a replacement supersede a dead one. A
   // *healthy* incumbent still wins, so the ordinary static/recovery race is unchanged.
-  const RECORDER_VERSION = 11;
+  const RECORDER_VERSION = 12;
   const recorderHandle = {
     version: RECORDER_VERSION,
     healthy: () => false,
@@ -2870,8 +2870,6 @@
   const FIBER_MAX_MESSAGES = 200;
   const FIBER_MAX_ACTIVITIES = 200;
   const TOOL_NAME = /^[a-z0-9_.-]{1,64}$/i;
-  const FIBER_BUSY_CAPTIONS = new Set(['thinking', 'thinking about it', 'reasoning', 'working', 'loading', 'done', 'called tool']);
-  const FIBER_TIMER_CAPTION = /^(?:worked|thought|reasoned|thinking)\s+for\s+[\d.,]+\s*(?:s|m|h|sec|secs|seconds?|min|mins|minutes?|hours?)\b/;
 
   /** Descriptors from the last successful scan, keyed by the stamp on their row. */
   let fiberRows = new Map();
@@ -2921,11 +2919,6 @@
   const userAuthoredTimesReported = new Map();
 
   const cap = (value, max) => (typeof value === 'string' && value.length > 0 ? value.slice(0, max) : null);
-
-  function fiberBusyCaption(label) {
-    const plain = String(label || '').toLowerCase().replace(/[.…\s]+$/, '').trim();
-    return FIBER_BUSY_CAPTIONS.has(plain) || FIBER_TIMER_CAPTION.test(plain);
-  }
 
   /** One descriptor, rebuilt field by field. Anything unexpected makes the row null. */
   function readDescriptor(raw) {
@@ -3088,13 +3081,15 @@
       if (!entry || typeof entry !== 'object') continue;
       const messageId = cap(entry.messageId, 200);
       const label = cap(entry.label, 300);
-      if (!messageId || !label || fiberBusyCaption(label)) continue;
+      if (!messageId || !label) continue;
+      const detail = cap(entry.detail, 8192);
       const priorAt = activityIndex.get(messageId);
       if (priorAt === undefined) {
         activityIndex.set(messageId, activities.length);
         activities.push({
           messageId,
           label,
+          ...(detail ? { detail } : {}),
           order:
             Number.isInteger(entry.order) && entry.order >= 0 && entry.order < FIBER_MAX_MESSAGES * 4
               ? entry.order
@@ -3102,7 +3097,7 @@
         });
         continue;
       }
-      if (activities[priorAt].label !== label) conflictingActivities.add(messageId);
+      if (activities[priorAt].label !== label || (activities[priorAt].detail || null) !== detail) conflictingActivities.add(messageId);
     }
     const keptActivities = activities.filter((activity) => !conflictingActivities.has(activity.messageId));
     const endMessageId = cap(raw.endMessageId, 200);
@@ -3714,13 +3709,14 @@
         if (item.type === 'activity') {
           const activity = item.value;
           const owner = localOwner || '';
-          const signature = `${activity.label}\u0000${owner}`;
+          const signature = `${activity.label}\u0000${activity.detail || ''}\u0000${owner}`;
           if (pageToolsReported.get(activity.messageId) === signature) continue;
           pageToolsReported.set(activity.messageId, signature);
           if (generating && index === activeTurnIndex) noteTurnProgress();
           emit({
             kind: 'page_tool',
             text: activity.label,
+            ...(activity.detail ? { detail: activity.detail } : {}),
             messageId: activity.messageId,
             turnId: localOwner || undefined
           });
@@ -10244,7 +10240,7 @@
         decision = { id: input.id, owner: input.owner, messageId: null, text: input.text, temporary, onTarget: sendingTarget, conversationId: null, epoch: forEpoch, response: '', publishing: false };
         desktopDecision = decision;
       }
-      if (input.projectId) desktopProjectInput = { id: input.id, owner: input.owner };
+      desktopProjectInput = { id: input.id, owner: input.owner };
       if (!(await sendSubmittedText(sendingTarget, false, async sendCurrent => {
         // Preserve the outbox's revocable claim until the actual native Send is ready.
         const authorized = await ask({ type: 'desktop_input', id: input.id, owner: input.owner, conversationId: target, authorize: true });

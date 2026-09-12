@@ -22,4 +22,15 @@
   # Chromium's sandbox needs read and execute access through the app tree.
   # Add one inheritable grant to the final directory without resetting other ACLs.
   !insertmacro grantSandboxReadAccess
+  # This is an installation preference seed, not a second user-config store. Existing app
+  # language wins. Keeping the seed under resources avoids writing the elevated user's AppData.
+  FileOpen $0 "$INSTDIR\resources\installer-language.json" w
+  ${If} $0 != ""
+    ${If} $LANGUAGE == 2052
+      FileWrite $0 '{$\"language$\":$\"zh-CN$\"}'
+    ${Else}
+      FileWrite $0 '{$\"language$\":$\"en$\"}'
+    ${EndIf}
+    FileClose $0
+  ${EndIf}
 !macroend

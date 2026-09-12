@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
   }
 }));
 
-const { defaultConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
+const { defaultConfig: productDefaultConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
 const { initSecretsPath, setSecret } = await import('../src/main/secrets.js');
 const {
   appendEvent,
@@ -376,3 +376,6 @@ it('normalizes pre-provenance session metadata to an explicit null', async () =>
   initSessionStore(dir);
   expect((await getSession(session.id))?.lastCommittedResumeHandoffId).toBeNull();
 });
+
+// Retained advanced helper-policy regression fixture. New default is covered by workflow.test.ts.
+function defaultConfig(...args: Parameters<typeof productDefaultConfig>) { const config = productDefaultConfig(...args); config.goal.executionPolicy = 'legacy-helper'; return config; }

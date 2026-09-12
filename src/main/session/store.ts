@@ -399,6 +399,7 @@ export async function createSession(options: {
   if (options.origin?.fromSessionId) {
     const source = await getSession(options.origin.fromSessionId);
     if (source?.projectId) summary.projectId = source.projectId;
+    if (source?.accountId) summary.accountId = source.accountId;
   }
   // Invalidate before exposing the in-flight live entry. A cached miss must never hide a
   // session that this process has started creating, even while its first durable write awaits.
@@ -1000,7 +1001,10 @@ export function appendEvent(sessionId: string, event: NewSessionEvent): Promise<
         logError(`session append failed: ${err.message}`);
       }
     );
-    return write;
+    return write.then(full => {
+      if (committedEventListener) void committedEventListener(sessionId, full).catch(error => logError(`workflow event failed: ${error.message}`));
+      return full;
+    });
   });
 }
 
@@ -1184,7 +1188,10 @@ export function upsertMessageEvent(
       () => undefined,
       (err: Error) => logError(`session message upsert failed: ${err.message}`)
     );
-    return write;
+    return write.then(result => {
+      if (result.changed && committedEventListener) void committedEventListener(sessionId, result.event).catch(error => logError(`workflow message failed: ${error.message}`));
+      return result;
+    });
   });
 }
 
@@ -2127,6 +2134,22 @@ export async function getSession(id: string): Promise<SessionSummary | null> {
   return summary ? { ...summary } : null;
 }
 
+/** Control commits share the existing session queue with turn recording and rebind. */
+export async function updateSessionWorkflow(id: string, change: (summary: Readonly<SessionSummary>) => import('../../shared/workflow.js').SessionWorkflow): Promise<SessionSummary> {
+  const entry = await ensureOpen(id);
+  return enqueueSessionOperation(entry, 'workflow', async () => {
+    const candidate = { ...entry.summary, workflow: change(structuredClone(entry.summary)) };
+    await writeSummary(candidate, entry.historySeq);
+    entry.summary = candidate;
+    publishCachedSummary(candidate, false);
+    return structuredClone(candidate);
+  });
+}
+
+type CommittedEventListener = (id: string, event: SessionEvent) => Promise<void>;
+let committedEventListener: CommittedEventListener | null = null;
+export function setCommittedSessionEventListener(listener: CommittedEventListener | null): void { committedEventListener = listener; }
+
 /** A plan is one replaceable session document, not another execution queue. */
 async function readPlanFile(id: string): Promise<AgentPlan | null> {
   let handle;
@@ -2151,6 +2174,24 @@ export async function readSessionPlan(id: string): Promise<AgentPlan | null> {
   return readPlanFile(id);
 }
 
+/** Archived revisions remain on disk; the panel reads the newest fifty. */
+export async function readSessionPlanHistory(id: string): Promise<import('../../shared/agent-plan.js').AgentPlanHistoryEntry[]> {
+  assertSessionId(id);
+  await open.get(id)?.queue;
+  const directory = path.join(sessionDir(id), 'plan-history');
+  const files = await fs.readdir(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error; });
+  const revisions = files.filter(file => /^\d+\.json$/.test(file)).sort((a, b) => Number.parseInt(a) - Number.parseInt(b));
+  const result: import('../../shared/agent-plan.js').AgentPlanHistoryEntry[] = [];
+  for (const [index, file] of revisions.entries()) {
+    if (index < revisions.length - 50) continue;
+    const target = path.join(directory, file);
+    if ((await fs.stat(target)).size > MAX_AGENT_PLAN_BYTES) continue;
+    try { const parsed = agentPlanSchema.safeParse(JSON.parse(await fs.readFile(target, 'utf8'))); if (parsed.success) result.push({ ...parsed.data, revision: index + 1 }); }
+    catch (error) { if (!(error instanceof SyntaxError)) throw error; }
+  }
+  return result;
+}
+
 export async function updateSessionPlan(
   id: string, conversationId: string, input: AgentPlanUpdate, startedAt: number
 ): Promise<boolean> {
@@ -2164,6 +2205,12 @@ export async function updateSessionPlan(
     if (entry.summary.conversationId !== conversationId) return false;
     const previous = await readPlanFile(id);
     if (previous && previous.updatedAt > startedAt) return false;
+    if (previous && JSON.stringify(previous.plan) === JSON.stringify(plan.plan) && previous.explanation === plan.explanation) return true;
+    if (previous) {
+      const history = path.join(sessionDir(id), 'plan-history');
+      await fs.mkdir(history, { recursive: true });
+      await fs.writeFile(path.join(history, `${previous.updatedAt}.json`), JSON.stringify(previous), 'utf8');
+    }
     const target = path.join(sessionDir(id), 'plan.json');
     const temporary = `${target}.${randomUUID()}.tmp`;
     try {
@@ -2246,6 +2293,19 @@ export async function observeSessionModel(
 }
 
 /** Bind once before publishing project work; a task never silently changes folders. */
+export async function bindSessionAccount(id: string, accountId: string): Promise<void> {
+  if (!/^[a-f0-9-]{36}$/i.test(accountId)) throw new Error('Invalid account id');
+  const entry = await ensureOpen(id);
+  await enqueueSessionOperation(entry, 'account', async () => {
+    if (entry.summary.accountId === accountId) return;
+    if (entry.summary.accountId) throw new Error('Session already belongs to another account');
+    const staged = { ...entry.summary, accountId };
+    await writeSummary(staged, entry.historySeq);
+    entry.summary = staged;
+    publishAttachmentSummary(staged);
+  });
+}
+
 export async function bindSessionProject(id: string, projectId: string): Promise<void> {
   if (!/^[a-f0-9-]{36}$/i.test(projectId)) throw new Error('Invalid project id');
   const entry = await ensureOpen(id);

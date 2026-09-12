@@ -259,11 +259,12 @@ interface TurnEvidence {
     rawText: string;
     renderedHtml: string;
   }>;
-  activities?: Array<{ messageId: string; label: string; order: number }>;
+  activities?: Array<{ messageId: string; label: string; order: number; detail?: string }>;
 }
 
 /** One assistant turn section, carrying its own message model the way the page does. */
 interface TurnFixture {
+  activities?: Array<{ owner: string; label: string; detail?: string; hidden?: boolean }>;
   id: string;
   messages: Message[];
   /** A visible `.markdown` block: its text, or markup when the test is about the markup. */
@@ -306,6 +307,19 @@ async function scan(
       if (typeof entry === 'string') block.textContent = entry;
       else block.innerHTML = entry.html;
       section.append(block);
+    }
+    for (const activity of turn.activities ?? []) {
+      const owner = chain({ item: { type: 'thought', key: `thought-${activity.owner}-0` } }, 1);
+      const heading = document.createElement('span');
+      heading.className = 'tool-message'; heading.textContent = activity.label;
+      (heading as unknown as Record<string, unknown>)['__reactFiber$test'] = owner;
+      section.append(heading);
+      if (activity.detail) {
+        const detail = document.createElement('div'); detail.className = 'markdown'; detail.innerHTML = activity.detail;
+        detail.hidden = activity.hidden === true;
+        (detail as unknown as Record<string, unknown>)['__reactFiber$test'] = owner;
+        section.append(detail);
+      }
     }
     document.body.append(section);
   }
@@ -362,6 +376,30 @@ const rowInTurn = (messages: Message[], turnMessages: Message[], collapsed = 0) 
 // --------------------------------------------------------------------- tests
 
 describe('reading a row out of the page', () => {
+  it('captures visible thought summaries with their model order and excludes hidden/raw reasoning', async () => {
+    const internal = thought('visible-owner');
+    internal.content!.text = 'PRIVATE_MODEL_PAYLOAD';
+    const result = await scan([], [{ id: 'activity-turn', messages: [authored('intro', 'Intro'), internal],
+      activities: [{ owner: internal.id, label: '正在核对实现', detail: '<p>先检查连接。</p><p>再核对显示。<span hidden>HIDDEN_PAYLOAD</span></p>' }] }]);
+    expect(result.turns[0]!.activities).toEqual([{ messageId: 'thought-visible-owner-0', order: 1, label: '正在核对实现', detail: '先检查连接。\n再核对显示。' }]);
+    expect(JSON.stringify(result)).not.toMatch(/PRIVATE_MODEL_PAYLOAD|HIDDEN_PAYLOAD/);
+  });
+
+  it('keeps a native busy caption but ignores collapsed and unowned Markdown', async () => {
+    const result = await scan([], [{ id: 'activity-turn', messages: [thought('visible-owner')], rendered: ['Unowned text'],
+      activities: [{ owner: 'visible-owner', label: 'Thinking', detail: '<p>COLLAPSED_SUMMARY</p>', hidden: true },
+        { owner: 'unknown-owner', label: 'Foreign thought', detail: '<p>FOREIGN_SUMMARY</p>' }] }]);
+    expect(result.turns[0]!.activities).toEqual([{ messageId: 'thought-visible-owner-0', order: 0, label: 'Thinking' }]);
+    expect(JSON.stringify(result)).not.toMatch(/COLLAPSED_SUMMARY|FOREIGN_SUMMARY/);
+  });
+
+  it('bounds long rendered summaries and visibly marks truncation', async () => {
+    const result = await scan([], [{ id: 'activity-turn', messages: [thought('visible-owner')],
+      activities: [{ owner: 'visible-owner', label: 'Working', detail: `<p>${'a'.repeat(10000)}</p>` }] }]);
+    const detail = result.turns[0]!.activities![0]!.detail!;
+    expect(detail.length).toBeLessThanOrEqual(8192);
+    expect(detail.endsWith('…')).toBe(true);
+  });
   /**
    * The regression the whole batch exists for. The group node is exactly `MAX_CLIMB`
    * levels up, which the old `up < MAX_CLIMB` stopped one short of, so this row — and

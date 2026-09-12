@@ -1,4 +1,5 @@
 import { toolDeclaration } from './tool-declarations.js';
+import { readSkillResource } from '../skills/runtime.js';
 import { registerPlanTool } from './plan-tool.js';
 import { goalWorkerChat } from '../bridge.js';
 import { announceSessionFinish } from '../session/finish.js';
@@ -276,7 +277,8 @@ export function registerCoreTools(reg: SurfaceRegistrar): void {
         description:
           'Read what is at one or more paths. A folder is listed one level deep, a text file comes back as numbered lines, ' +
           'a PNG/JPEG/GIF/WebP comes back as an image, and anything else returns its metadata and why it was not decoded. ' +
-          'Paths may contain * ? and ** and are expanded here. Every result starts with a header giving size, timestamps and line count. ' +
+          'Paths may contain * ? and ** and are expanded here. Every filesystem result starts with a header giving size, timestamps and line count. ' +
+          'An app-supplied /skills/name/digest/file path reads one immutable, project-enabled skill resource as plain text; do not invent a path, combine it with other paths or request line ranges. ' +
           `The line-number prefix is display metadata, not file content — strip it before quoting text into apply_patch. ` +
           `start_line/end_line apply to every file the call resolves to; a path may instead carry its own range as path:12-40 or path:12, so several ranges of one file fit in one call. A typical 1,500-line source file fits in the default read: do not pre-paginate it. ` +
           `Batch related paths in one call; only continue from a line when the returned header says more lines follow. The aggregate payload remains bounded at about ${formatBytes(MAX_READ_BYTES)}.`,
@@ -312,6 +314,13 @@ export function registerCoreTools(reg: SurfaceRegistrar): void {
             return fail(
               'TOOL_DISABLED: read is disabled by the current Chat On Steroids permissions. Ask the user to enable reading in the app.'
             );
+          }
+          if (paths.some(item => item.startsWith('/skills/'))) {
+            if (!caps.read) return fail('TOOL_DISABLED: reading skill resources requires read permission.');
+            if (paths.length !== 1 || start_line !== undefined || end_line !== undefined) return fail('Read one exact versioned skill resource per call.');
+            const text = await readSkillResource(currentCaller().sessionId, paths[0]!);
+            if (Buffer.byteLength(text, 'utf8') > (max_bytes ?? DEFAULT_READ_BYTES)) return fail('Skill resource exceeds max_bytes; increase the limit to read the complete instructions.');
+            return ok(text);
           }
           const targets: ReadTarget[] = [];
           const notes: string[] = [];

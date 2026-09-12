@@ -23,6 +23,14 @@
     'Segoe UI', system-ui, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', Consolas, monospace;
 }
+.account-guide { margin-block: 16px; padding: 12px; border: 1px solid var(--edge); border-radius: 12px; background: var(--card); }
+.account-guide summary { cursor: pointer; font-weight: 600; }
+.account-guide p, .account-guide ol { font-size: 12px; color: var(--muted); }
+.account-guide label { display: block; margin-bottom: 6px; font-size: 12px; }
+.account-guide textarea { box-sizing: border-box; width: 100%; resize: vertical; min-height: 70px; border: 1px solid var(--edge); border-radius: 8px; padding: 8px; background: var(--bg); color: var(--text); font: 12px var(--mono); }
+.account-guide button { min-height: 32px; }
+.account-guide :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+#accountPairStatus { overflow-wrap: anywhere; }
 
 @media (prefers-color-scheme: light) {
   :root {

@@ -60,15 +60,15 @@ it('removes a grouping durably while preserving files, conversations and pending
   const input = await enqueueInput({ id: randomUUID(), projectId: project.id, sessionId: null, text: 'Queued work', dueAt: 0, mode: 'auto', model: null, reasoningEffort: null });
   await Promise.all([removeProject(project.id), removeProject(project.id)]);
   resetDurableForTests(); initDurableStore(directory); resetInputForTests(); resetSessionStoreForTests();
-  expect(await listProjects()).toEqual([{ ...project, ungrouped: true }, other]);
+  expect(await listProjects()).toEqual([{ ...project, mainSessionId: expect.any(String), ungrouped: true }, other]);
   expect((await getSession(session.id))?.title).toBe('Keep this chat');
   expect(await getSessionProject(session.id)).toMatchObject({ virtual: '/work/first' });
   expect(await fs.readFile(file, 'utf8')).toBe('keep');
   expect(await claimBrowserInput(input.id, 'document', null)).toMatchObject({ id: input.id });
   expect(await bindBrowserInputProject(input.id, 'document', 'queued-conversation')).toBe(true);
   await expect(removeProject(randomUUID())).rejects.toThrow('Project not found');
-  expect(await addProject(project.path)).toEqual(project);
-  expect(await listProjects()).toEqual([project, other]);
+  expect(await addProject(project.path)).toMatchObject({ ...project, mainSessionId: expect.any(String) });
+  expect(await listProjects()).toEqual([expect.objectContaining({ ...project, mainSessionId: expect.any(String) }), other]);
 });
 
 it('binds a claimed fresh input before evidence without acknowledging delivery or accepting another document', async () => {

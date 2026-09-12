@@ -636,6 +636,7 @@
 
     const blocks = [];
     const blockSections = [];
+    const thoughtIds = new Set(messages.filter(thoughtMessage).map(message => str(message.id)));
     for (let sectionAt = 0; sectionAt < sections.length; sectionAt++) {
       const section = sections[sectionAt];
       let found;
@@ -647,6 +648,9 @@
       for (let at = 0; at < found.length; at++) {
         const block = found[at];
         if (block.closest && (block.closest(TOOL) || block.closest(OWN_SURFACES))) continue;
+        // Thought summaries cannot decorate unrelated final-answer prose.
+        const fiber = fiberOf(block);
+        if (fiber && thoughtItemOf(fiber, thoughtIds)) continue;
         const parent = block.parentElement && block.parentElement.closest ? block.parentElement.closest(MARKDOWN) : null;
         if (parent && section.contains(parent)) continue;
         blocks.push(block);
@@ -802,7 +806,7 @@
    * with different labels (a transition/reparent race), that scan is ambiguous and emits
    * neither version. The next stable scan reconciles it.
    */
-  function nativeActivitiesOf(sections, messages) {
+  function nativeActivitiesOf(sections, messages, budget) {
     const thoughtIds = new Set();
     const thoughtOrder = new Map();
     for (let at = 0; at < messages.length; at++) {
@@ -820,7 +824,7 @@
       const section = sections[sectionAt];
       let found;
       try {
-        found = section.querySelectorAll(TOOL);
+        found = section.querySelectorAll(`${TOOL}, ${MARKDOWN}`);
       } catch {
         continue;
       }
@@ -831,7 +835,8 @@
         const row = found[at];
         let parent = row && row.parentElement;
         while (parent && parent !== section) {
-          if (candidates.has(parent)) nestedParents.add(parent);
+          if (candidates.has(parent) && parent.matches(MARKDOWN)) nestedParents.add(row);
+          else if (candidates.has(parent) && !row.matches(MARKDOWN)) nestedParents.add(parent);
           parent = parent.parentElement;
         }
       }
@@ -844,12 +849,9 @@
         try {
           if (row.closest && row.closest(OWN_SURFACES)) continue;
           if ((row.querySelector && row.querySelector(CONNECTOR)) || (row.closest && row.closest(CONNECTOR))) continue;
-          if (row.querySelector && row.querySelector(MARKDOWN)) continue;
         } catch {
           continue;
         }
-        const label = visibleText(row.textContent).slice(0, 300);
-        if (!label || label.length > 300) continue;
         let activity = null;
         try {
           const fiber = fiberOf(row);
@@ -859,6 +861,12 @@
         }
         if (!activity) continue;
 
+        // Read only rendered DOM text belonging to this exact thought item. Never
+        // export the thought payload from React, or hidden/collapsed summary text.
+        const isDetail = row.matches(MARKDOWN);
+        const text = activityText(row, isDetail ? 8192 : 300, !isDetail);
+        if (!text) continue;
+
         let prior = null;
         for (let entryAt = 0; entryAt < held.length; entryAt++) {
           if (held[entryAt].messageId === activity.messageId) prior = held[entryAt];
@@ -866,22 +874,54 @@
         if (!prior) {
           held.push({
             messageId: activity.messageId,
-            label,
-            order: thoughtOrder.get(activity.messageId),
+            label: isDetail ? '' : visibleText(text),
+            details: isDetail ? [text] : [],
+            order: thoughtOrder.get(activity.thoughtMessageId),
             conflicted: false
           });
-        } else if (prior.label !== label) {
+        } else if (isDetail) {
+          if (!prior.details.includes(text)) prior.details.push(text);
+        } else if (prior.label && prior.label !== visibleText(text)) {
           prior.conflicted = true;
+        } else {
+          prior.label = visibleText(text);
         }
       }
     }
     const out = [];
     for (let at = 0; at < held.length; at++) {
       if (!held[at].conflicted) {
-        out.push({ messageId: held[at].messageId, label: held[at].label, order: held[at].order });
+        const entry = held[at];
+        const detail = budgetedText(entry.details.join('\n\n'), budget, 8192);
+        const label = budgetedText(entry.label || visibleText(detail).slice(0, 300), budget, 300);
+        if (label) out.push({ messageId: entry.messageId, label, order: entry.order, ...(detail ? { detail } : {}) });
       }
     }
     return out;
+  }
+
+  /** Bounded text from rendered nodes; works in background tabs without a focus check. */
+  function activityText(root, limit, skipMarkdown) {
+    for (let at = root; at; at = at.parentElement) {
+      const style = getComputedStyle(at);
+      if (at.hidden || at.getAttribute('aria-hidden') === 'true' || style.display === 'none' ||
+          style.visibility === 'hidden' || style.visibility === 'collapse') return '';
+    }
+    let text = '', visited = 0;
+    const pending = [root];
+    while (pending.length && text.length <= limit && visited++ < 2048) {
+      const node = pending.pop();
+      if (node.nodeType === 3) { text += node.nodeValue || ''; continue; }
+      if (node.nodeType !== 1) continue;
+      if (node !== root && skipMarkdown && node.matches(MARKDOWN)) continue;
+      const style = getComputedStyle(node);
+      if (node.hidden || node.getAttribute('aria-hidden') === 'true' || node.matches(`script, style, ${OWN_SURFACES}`) ||
+          style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') continue;
+      if (/^(P|DIV|LI|BR|H[1-6])$/.test(node.tagName)) text += '\n';
+      for (let child = node.lastChild; child; child = child.previousSibling) pending.push(child);
+    }
+    const truncated = text.length > limit || pending.length > 0;
+    return (truncated ? text.slice(0, limit - 2) + '\n…' : text).trim();
   }
 
   /**
@@ -1216,8 +1256,8 @@
         const turnBudget = { remaining: Math.min(MAX_TURN_TEXT, responseBudget.remaining) };
         const before = turnBudget.remaining;
         const renderedMessages = renderedMessagesOf(group.sections, messages, turnBudget);
+        const activities = nativeActivitiesOf(group.sections, messages, turnBudget);
         responseBudget.remaining -= before - turnBudget.remaining;
-        const activities = nativeActivitiesOf(group.sections, messages);
         const endMessageId = turnEndMessageId(messages);
         if (
           calls.length === 0 &&

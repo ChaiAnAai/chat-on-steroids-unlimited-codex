@@ -824,6 +824,7 @@ export function goalSwitchFor(conversationId: string): { enabled: boolean; mode:
 
 /** One authority for finish generation and the lifetime of its queued instruction. */
 export function automaticFinishEnabled(conversationId: string): boolean {
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') return false;
   return getConfig().ui.finishAction === 'goal' || goalSwitchFor(conversationId).enabled;
 }
 
@@ -879,6 +880,7 @@ export function goalSwitchEnabledFor(conversationId: string): boolean {
  * places that ask — the route and the ticket below — must never drift apart.
  */
 export function goalArmedFor(conversationId: string): boolean {
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') return false;
   const held = goalSwitchFor(conversationId);
   if (held.own) return held.enabled;
   return held.enabled || goalObjectiveFor(conversationId) !== '';
@@ -1219,6 +1221,7 @@ export interface StartGoalDraftInput {
  * service-worker restart would drop.
  */
 export function startGoalDraft(input: StartGoalDraftInput): GoalDraftView {
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') throw new Error('Planning continues in the project main conversation. Helper chats are disabled.');
   const existing = drafts.get(input.conversationId);
   const clientId = input.clientId ?? '';
   if (existing) expireDraftPayload(existing);
@@ -1619,6 +1622,7 @@ async function run(draft: GoalDraft): Promise<void> {
  */
 /** Finish asks the existing Loop driver for the next instruction; its caller owns delivery. */
 export async function draftFastFollowup(sessionId: string, signal: AbortSignal = AbortSignal.timeout(180000), preparedMessages?: ChatMessage[], publish?: GoalRequest['publish'], mode: GoalMode = 'loop'): Promise<string | null> {
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') throw new Error('Use a checkpoint in the project conversation to continue.');
   const backend = goalBackendFor(mode);
   const settings = getConfig().goal;
   const endpoint = goalEndpoint();
@@ -1657,6 +1661,7 @@ export async function draftFastFollowup(sessionId: string, signal: AbortSignal =
 
 /** Plans use the existing bounded Goal transport, but never its prose noise transform. */
 export async function draftTaskPlan(prompt: string, backend: 'api' | 'chatgpt', onProgress?: (progress: TaskProgressUpdate) => void, signal?: AbortSignal): Promise<string[]> {
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') throw new Error('Create the plan in the project conversation.');
   onProgress?.({ phase: 'preparing', text: '' });
   if (!prompt.trim() || prompt.length > 16000) throw new Error('Enter a task of at most 16000 characters');
   const settings = getConfig().goal;
@@ -1685,6 +1690,7 @@ export async function draftOpeningMessage(
   onProgress?: (progress: TaskProgressUpdate) => void,
   signal?: AbortSignal
 ): Promise<{ reply: string; model: string } | { error: string; retryable?: boolean; retryAfterMs?: number }> {
+  if (getConfig().goal.executionPolicy !== 'legacy-helper') return { reply: objective, model: 'Current conversation' };
   const goal = objective.trim();
   signal?.throwIfAborted();
   onProgress?.({ phase: 'preparing', text: '' });

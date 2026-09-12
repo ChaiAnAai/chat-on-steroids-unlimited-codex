@@ -1,20 +1,4 @@
-/* ---------------------------------------------------------------------------
-   A quiet tonal design with a soft blue wash behind the dark sidebar.
-
-   Structure is carried by tone — the page, a card lifted a step off it, a
-   hairline, and three levels of text. The sidebar adds a muted blue atmosphere;
-   status colours still distinguish failures and live connections.
-
-   Dark is the default and the one the app was drawn for: near-black ground,
-   charcoal cards, white as the accent. Light is the same geometry inverted.
-
-   Corners are generous and consistent — every surface picks one of five radii and
-   nothing invents its own — because a window this dense reads as calmer when the
-   shapes agree with each other.
-
-   The window prefers 1080x700 but can shrink to the current display and can be resized,
-   so long content scrolls inside its own panes rather than growing or clipping the page.
-   --------------------------------------------------------------------------- */
+/* Legacy widget mechanics. Semantic palette and workspace layout live in workspace.css. */
 
 .panel.plugins-panel { overflow-y: auto; padding: 46px 36px 32px; scrollbar-gutter: stable; }
 .panel.plugins-panel.is-active { display: block; }
@@ -93,9 +77,8 @@
 .plugin-detail-hero .plugin-icon { width: 60px; height: 60px; border-radius: 16px; }
 .plugin-detail-hero p, .plugin-card-head p { margin: 0; color: var(--soft); line-height: 1.6; }
 .plugin-detail-intro { min-width: 0; }
-.plugin-dialog .plugin-configure, .plugin-dialog .plugin-actions .btn-solid { display: inline-flex; padding: 10px 16px; border: 1px solid #2673d8; background: #2673d8; color: #fff; font-weight: 600; }
+.plugin-dialog .plugin-configure, .plugin-dialog .plugin-actions .btn-solid { display: inline-flex; padding: 10px 16px; font-weight: 600; }
 .plugin-dialog .plugin-configure { margin-top: 14px; }
-.plugin-dialog .plugin-configure:hover, .plugin-dialog .plugin-actions .btn-solid:hover { background: #1d5eb4; border-color: #1d5eb4; }
 .plugin-detail-tools { margin-top: 28px; }
 .plugin-detail-tools h3 { margin: 0 0 7px; font-size: 15px; font-weight: 650; }
 .plugin-tools-summary { margin: 5px 0; color: var(--soft); font-size: 11px; line-height: 1.6; }
@@ -141,96 +124,7 @@
   .plugin-connection > div { flex-basis: auto; }
 }
 
-:root {
-  --page: #f4f4f5;
-  --card: #fff;
-  --ink: #0c0c0e;
-  --soft: #56565e;
-  --faint: #8b8b94;
-  --line: #e7e7ea;
-  --hover: #f0f0f2;
-  --sunk: #f7f7f8;
-  /* Switch track, control outline, and the raised knob / selected segment. */
-  --track: #d7d7dc;
-  --edge: #dcdce1;
-  --raise: #fff;
-
-  /* The accent is ink. Kept under the old name so every rule below is one design. */
-  --blue: #0c0c0e;
-  --wash: #eeeef0;
-  --blue-line: #d9d9de;
-  --accent: #486f9d;
-  --accent-wash: #eaf1f9;
-  --accent-edge: #cad9eb;
-
-  --green: #1f7a4d;
-  --green-wash: #eef6f1;
-  --green-line: #cfe4d8;
-
-  --red: #b4262c;
-  --red-wash: #fbf0f0;
-  --red-line: #eccdcd;
-
-  /* Card lift. Barely there on paper, absent in the dark theme below. */
-  --lift: 0 1px 1px rgb(12 12 14 / 3%), 0 10px 26px -18px rgb(12 12 14 / 22%);
-  /* The switch knob has to read against its own track in both states, and the track
-     flips from grey to full ink when it is on - so the knob needs two values, not one. */
-  --knob-off: #fff;
-  --knob-on: #fff;
-  /* Focus ring, derived from the ink so it is one rule in both themes. */
-  --ring: color-mix(in srgb, var(--ink) 16%, transparent);
-
-  /* Five radii, and nothing else. */
-  --r-xs: 6px;
-  --r-sm: 10px;
-  --r-md: 14px;
-  --r-lg: 18px;
-  --r-xl: 24px;
-  --pill: 999px;
-
-  --mono: "Cascadia Mono", Consolas, "Courier New", monospace;
-}
-
-/*
- * Dark is an explicit choice, stored in settings and applied by script — it is never
- * inherited from Windows. The structure is identical; only these values change, so a
- * colour used anywhere below is correct in both themes without a second rule.
- */
-:root[data-theme='dark'] {
-  /* Neutral charcoal sampled from Codex; the sidebar supplies the subtle colour. */
-  --page: #181818;
-  --card: #262725;
-  --ink: #eceeeb;
-  --soft: #b5b7b3;
-  --faint: #8f9488;
-  --line: #323430;
-  --hover: #30322f;
-  --sunk: #20221f;
-  --track: #34343d;
-  --edge: #363834;
-  --raise: #292932;
-
-  --blue: #f4f4f6;
-  --wash: #1c1c22;
-  --blue-line: #34343d;
-  --accent: #b0cbed;
-  --accent-wash: #25313f;
-  --accent-edge: #3d5068;
-
-  --green: #63c795;
-  --green-wash: #10201a;
-  --green-line: #24402f;
-
-  --red: #ef8a8a;
-  --red-wash: #241416;
-  --red-line: #4a262a;
-
-  /* No drop shadow in the dark: the hairline is the edge, and a black shadow on a
-     black page is only mud. */
-  --lift: none;
-  --knob-off: #74747e;
-  --knob-on: #0c0c0e;
-}
+/* Theme and workspace geometry are owned by workspace.css. */
 
 * {
   box-sizing: border-box;
@@ -259,12 +153,6 @@ html:lang(zh-CN) body { letter-spacing: 0; line-break: strict; }
 .setup-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; }
 .setup-heading .settings-heading { margin-bottom: 0; padding: 0; }
 .setup-heading .settings-heading p { margin-bottom: 0; }
-.language-tabs { display: inline-flex; flex: none; padding: 3px; gap: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
-.language-tabs button { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; cursor: pointer; white-space: nowrap; }
-.language-tabs button:hover { background: var(--hover); color: var(--ink); }
-.language-tabs button[aria-pressed='true'] { background: var(--hover); border-color: var(--line); color: var(--ink); }
-.language-tabs button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.language-flag { width: 24px; height: 16px; border-radius: 2px; overflow: hidden; flex: none; }
 
 /* Keep authored content, chat history and settings selectable; chrome is not text content. */
 :is(input, textarea, [contenteditable='true'], .msg, #timeline,
@@ -312,14 +200,10 @@ code {
 .app[data-screen='settings'] #pluginRefreshReminder { display: none; }
 .app > main { grid-column: 2; grid-row: 4; min-width: 0; }
 /* One static wash behind the chat, reduced to 20% of its previous contrast. */
-:root[data-theme='dark'] .app[data-screen='chat'] {
-  background: radial-gradient(ellipse at 12% 38%,
-    color-mix(in srgb, #1c1d1e 20%, var(--page)) 0%,
-    color-mix(in srgb, #1a1b1c 20%, var(--page)) 32%, var(--page) 78%);
-}
+:root[data-theme='dark'] .app[data-screen='chat'] { background: var(--page); }
 :root[data-theme='dark'] .app[data-screen='chat'] .card.is-session { background: transparent; }
 .app-topbar { grid-column: 1 / -1; grid-row: 1; display: flex; align-items: center; gap: 6px; height: env(titlebar-area-height, 28px); padding: 0 10px; padding-right: max(10px, calc(100vw - env(titlebar-area-width, 100vw))); background: var(--page); -webkit-app-region: drag; }
-:root[data-theme='dark'] .app-topbar { background: #1a2129; }
+:root[data-theme='dark'] .app-topbar { background: #171717; }
 .app-topbar > .btn, .view-menu { -webkit-app-region: no-drag; height: 100%; }
 .app-topbar > .btn { padding: 0 5px; }
 .app-topbar > .btn .ico { width: 14px; height: 14px; }
@@ -333,14 +217,13 @@ code {
 .app.is-sidebar-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
 .app.is-sidebar-collapsed .sidebar { display: none; }
 .sidebar { position: relative; grid-column: 1; grid-row: 2 / -1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--sunk); border-right: 1px solid var(--line); padding: 20px 12px 10px; }
-/* Sampled from the reference: near-black blue, a neutral middle, then blue-grey. */
+/* Keep navigation separated from the canvas without a blue cast. */
 :root[data-theme='dark'] .sidebar {
-  --accent-wash: #1a2227;
-  --accent-edge: #343e45;
-  --hover: rgb(148 181 205 / 10%);
-  --line: rgb(148 181 205 / 12%);
-  background: linear-gradient(180deg, #1a2129 0%, #1a2128 8%, #1d2124 29%,
-    #1c2125 39%, #1a2227 52%, #1a2227 100%);
+  --accent-wash: #252525;
+  --accent-edge: #414141;
+  --hover: rgb(255 255 255 / 8%);
+  --line: rgb(255 255 255 / 11%);
+  background: #191919;
 }
 .sidebar-resize { position: absolute; z-index: 5; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; touch-action: none; }
 .sidebar-resize:hover, .sidebar-resize:focus-visible, .app.is-resizing-sidebar .sidebar-resize { background: var(--accent-wash); outline: 1px solid var(--accent-edge); }
@@ -1714,11 +1597,10 @@ input[readonly] {
 .card.is-session:has(#timelineEmpty:not([hidden])) > h2, .card.is-session:has(#timelineEmpty:not([hidden])) > .subhead { visibility: hidden; }
 .card.is-session:has(#timelineEmpty:not([hidden])) #chatFoot { visibility: hidden; }
 .composer { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto 36px; align-items: center; gap: 8px; width: calc(100% - 48px); max-width: 860px; margin: 14px auto 24px; border: 1px solid var(--edge); border-radius: 22px; background: var(--card); padding: 14px 12px 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 10%); }
-.composer:focus-within { border-color: color-mix(in srgb, var(--ink) 22%, transparent); }
 .composer textarea:focus { box-shadow: none; }
 /* Chromium owns content height, including padding, hidden-to-visible layout and
    wrapping after width changes. Measuring scrollHeight while hidden yields zero. */
-.composer textarea { grid-column: 1 / -1; grid-row: 1; width: 100%; field-sizing: content; min-height: 24px; max-height: 220px; resize: none; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; line-height: 24px; padding: 0 2px 14px; }
+.composer textarea { grid-column: 1 / -1; grid-row: 1; width: 100%; field-sizing: content; min-height: 24px; max-height: 220px; resize: none; border: 0; border-radius: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; line-height: 24px; padding: 0 2px; }
 .composer-toolbar { display: contents; }
 .composer #attachmentMenu { grid-column: 1; grid-row: 2; }
 .composer .composer-options { grid-column: 3; grid-row: 2; }
@@ -2778,7 +2660,6 @@ select option { background: var(--card); color: var(--ink); }
 #composerPowerChoices input:focus-visible { outline: 2px solid #4796ff; outline-offset: 5px; }
 
 /* Contextual controls: normal chat contains prose and work, diagnostics stay optional. */
-#workspaceSettings { flex: 1; min-height: 40px; justify-content: flex-start; text-align: left; font-size: 14px; padding: 10px; border: 0; border-radius: 8px; }
 #chatSettingsBtn { display: none; }
 .picker-chevron { flex: none; width: 14px; height: 14px; }
 .send-control { position: relative; }

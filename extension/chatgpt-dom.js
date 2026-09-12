@@ -1320,8 +1320,11 @@ var CLF_DOM = (() => {
         const headingText = (heading?.textContent || '').trim();
         const value = (node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim();
         const english = /^too many requests$/i.test(headingText) && /temporarily limited.*access/i.test(value) && /few minutes/i.test(value);
+        // Observed on the signed-in Chinese desktop page on 2026-09-12. This is an
+        // account access restriction, not a model quota or an ordinary alert region.
+        const chinese = headingText === '请求过于频繁' && value.includes('我们已暂时限制你访问对话记录') && value.includes('请稍等几分钟后再重试');
         const korean = headingText === '요청이 너무 많습니다' && value.includes('데이터를 보호하기 위해 대화에 대한 액세스가 일시적으로 제한되었습니다.') && value.includes('몇 분 후 다시 시도해 주세요.');
-        if (value.length >= 500 || (!english && !korean)) continue;
+        if (value.length >= 500 || (!english && !korean && !chinese)) continue;
         const notice = value.startsWith(headingText) ? `${headingText} ${value.slice(headingText.length).trim()}` : value;
         out.push({ text: notice, node, turnId: null, recoverable: false, blocking: true });
         texts.add(value);

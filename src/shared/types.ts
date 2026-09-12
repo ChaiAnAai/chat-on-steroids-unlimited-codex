@@ -125,6 +125,8 @@ export const CHAT_BROWSERS = ['chrome', 'edge', 'brave'] as const;
 export type ChatBrowser = (typeof CHAT_BROWSERS)[number];
 
 export interface UiPrefs {
+  language?: 'en' | 'zh-CN';
+  proxyConnection?: import('./proxy-management.js').ProxyConnectionSettings;
   /** Maintenance may reuse existing tabs but cannot open helpers or missing chats. */
   browserOnly?: boolean;
   backgroundChats?: boolean;
@@ -145,7 +147,8 @@ export interface UiPrefs {
   /** Browser for app-originated launches; connected source tabs retain placement ownership. */
   chatBrowser?: ChatBrowser;
   /** Explicit choice, never inherited from the OS: the window looks how you left it. */
-  theme: 'light' | 'dark';
+  theme: import('./appearance.js').ThemeMode;
+  appearance?: import('./appearance.js').Appearance;
 }
 
 /**
@@ -244,6 +247,9 @@ export interface GoalProviderSettings {
 }
 
 export interface GoalSettings {
+  executionPolicy?: 'same-session' | 'legacy-helper';
+  reservePercent?: number;
+  warningPercent?: number;
   /** Optional active-turn Goal impulses; zero disables them. */
   impulseMinutes?: number;
   /** Include bounded recorded tool arguments/results in Goal decision context. */
@@ -551,7 +557,15 @@ export function browserExtensionRequired(config: Pick<Config, 'sessions' | 'mult
   return config.sessions.record || config.multiAgent.enabled;
 }
 
+export interface BuildIdentity {
+  version: string;
+  extensionVersion: string;
+  protocolVersion: number;
+  channel: 'preview' | 'release' | 'development';
+  dataDirectory: string;
+}
 export interface AppState {
+  build?: BuildIdentity;
   config: Config;
   status: ConnectionStatus;
   platform: PlatformInfo;

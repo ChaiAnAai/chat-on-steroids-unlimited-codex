@@ -61,14 +61,16 @@ describe('native window activation', () => {
     const start = vi.fn(async () => { state = 'pending'; return {}; });
     const context = vm.createContext({ window: { on: (event: string, callback: () => void) => {
       expect(event).toBe('show'); show = callback;
-    } }, quitting: false, getChatModels: () => ({ state }), startChatModelDiscovery: start, logWarn: vi.fn() });
+    } }, quitting: false, uiPreview: false, getChatModels: () => ({ state }), startChatModelDiscovery: start, logWarn: vi.fn() });
     vm.runInContext(listener, context);
     show(); await Promise.resolve(); expect(start).not.toHaveBeenCalled();
-    state = 'unknown';
+    state = 'unknown'; context.uiPreview = true;
+    show(); await Promise.resolve(); expect(start).not.toHaveBeenCalled();
+    context.uiPreview = false;
     show(); await Promise.resolve();
     show(); await Promise.resolve();
     expect(start).toHaveBeenCalledTimes(1);
-    expect(start).toHaveBeenCalledWith(true);
+    expect(start).toHaveBeenCalledWith(false);
     state = 'unavailable';
     show(); await Promise.resolve();
     expect(start).toHaveBeenCalledTimes(1);

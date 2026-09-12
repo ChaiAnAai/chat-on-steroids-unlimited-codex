@@ -9,13 +9,25 @@ function rgbaAt(rgba: Buffer, size: number, x: number, y: number): number[] {
 }
 
 describe('native tray image policy', () => {
-  it.each(['win32', 'linux'] as const)('keeps a colored status dot on %s', (platform) => {
+  it.each(['linux'] as const)('keeps the existing colored status mark on %s', (platform) => {
     const running = trayRgba(platform, true, 1);
     const stopped = trayRgba(platform, false, 1);
 
     expect(rgbaAt(running.rgba, running.size, 8, 8)).toEqual([34, 160, 90, 255]);
     expect(rgbaAt(stopped.rgba, stopped.size, 8, 8)).toEqual([130, 130, 138, 255]);
     expect(rgbaAt(running.rgba, running.size, 0, 0)[3]).toBe(0);
+  });
+
+  it.each([1, 2] as const)('keeps the Windows speech-bubble identity stable and changes only its status badge at %sx', scale => {
+    const running = trayRgba('win32', true, scale);
+    const stopped = trayRgba('win32', false, scale);
+    const sample = (x: number, y: number) => rgbaAt(running.rgba, running.size, x * scale, y * scale);
+    expect(sample(0, 0)[3]).toBe(0);
+    expect(sample(5, 4)[0]).toBeGreaterThan(200); // White Z bar.
+    expect(sample(3, 6)[3]).toBe(255); // Solid body, not a status dot.
+    for (let y = 0; y < 8 * scale; y++) for (let x = 0; x < running.size; x++)
+      expect(rgbaAt(running.rgba, running.size, x, y)).toEqual(rgbaAt(stopped.rgba, stopped.size, x, y));
+    expect(sample(12, 12)).not.toEqual(rgbaAt(stopped.rgba, stopped.size, 12 * scale, 12 * scale));
   });
 
   it('uses black-alpha template semantics and shape, not color, for macOS status', () => {

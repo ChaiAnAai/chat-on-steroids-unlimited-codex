@@ -9,6 +9,14 @@ The app and the `extension/` companion are versioned together. **Reload the
 extension after updating the app**. If their bridge protocols are incompatible,
 the app refuses the extension and asks you to reload the matching copy.
 
+## [2.1.0] — 2026-09-13
+
+- 知行桌面重设计：中性双主题、外观自定义、响应布局、独立停止与持久反馈。
+- 同项目主对话、计划历史和分段 checkpoint 续行基础；账号配对、Profile 选择及隔离基础。
+- MCP Registry 中文用途、图标、收藏与筛选；内置 Skills、本地导入和版本管理。
+- 应用与扩展统一为 2.1.0，桥接协议为 14；更新来源指向本分支仓库。
+- Source milestone only. Account activation, real parallel execution, generated-image delivery and installer acceptance remain pending. See [release notes](docs/release-notes/v2.1.0.md).
+
 ## [2.0.9] — they nerfed astra
 
 - Code mode combines local and plugin tools in one JavaScript call, with saved task plans and automatic background command results.

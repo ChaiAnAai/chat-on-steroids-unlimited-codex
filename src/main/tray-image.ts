@@ -74,7 +74,7 @@ function edgeCoverage(distance: number, radius: number): number {
 /**
  * Pure RGBA raster used by the tray image factory and its tests.
  *
- * Windows keeps the old green/grey status dot. Linux gets the same familiar colored mark but
+ * Windows uses a speech-bubble Z monogram with a separate status badge. Linux keeps its mark
  * through a portable PNG rather than a platform-dependent raw bitmap. macOS intentionally uses
  * only black + alpha, as required for menu-bar template images; disconnected is a ring so status
  * remains visible even though template images cannot carry semantic color.
@@ -86,6 +86,34 @@ export function trayRgba(
 ): { size: number; rgba: Buffer } {
   const size = LOGICAL_SIZE * scaleFactor;
   const rgba = Buffer.alloc(size * size * 4);
+  if (platform === 'win32') {
+    // Supersample a high-contrast outlined speech bubble. At 16 px the recognizable body
+    // and white Z remain stable while the lower-right badge alone carries service status.
+    const samples = 4;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const colors = [0, 0, 0, 0];
+      for (let sy = 0; sy < samples; sy++) for (let sx = 0; sx < samples; sx++) {
+        const px = (x + (sx + .5) / samples) / scaleFactor;
+        const py = (y + (sy + .5) / samples) / scaleFactor;
+        const bubble = px >= 1 && px <= 14 && py >= 1 && py <= 12
+          && Math.hypot(Math.max(3 - px, 0, px - 12), Math.max(3 - py, 0, py - 10)) <= 2;
+        const tail = px >= 3 && px <= 7 && py >= 11 && py <= 15 - (px - 3);
+        let color: number[] | null = bubble || tail ? [34, 45, 64] : null;
+        const rim = bubble && (px < 2 || px > 13 || py < 2 || py > 11);
+        const z = px >= 4 && px <= 11 && ((py >= 4 && py <= 5.4) || (py >= 8.5 && py <= 10)
+          || (py >= 5 && py <= 9 && Math.abs(px + py - 14.7) < 1));
+        if (rim || z) color = [245, 248, 255];
+        const badge = Math.hypot(px - 12.5, py - 12.5);
+        if (badge <= 3.1) color = badge > 2.2 ? [245, 248, 255] : running ? [22, 125, 69] : [83, 94, 110];
+        if (color) { for (let i = 0; i < 3; i++) colors[i]! += color[i]!; colors[3]! += 255; }
+      }
+      const offset = (y * size + x) * 4;
+      const covered = colors[3]! / 255;
+      for (let i = 0; i < 3; i++) rgba[offset + i] = covered ? Math.round(colors[i]! / covered) : 0;
+      rgba[offset + 3] = Math.round(colors[3]! / (samples * samples));
+    }
+    return { size, rgba };
+  }
   const centre = (size - 1) / 2;
   const outerRadius = 6.2 * scaleFactor;
   const innerRadius = 3.25 * scaleFactor;

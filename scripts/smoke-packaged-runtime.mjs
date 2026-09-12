@@ -37,7 +37,7 @@ const packageRoot = explicitRoot ? path.resolve(explicitRoot) : packageRootCandi
 if (!packageRoot) throw new Error(`Could not find unpacked ${targetPlatform}-${targetArch} package under ${releaseDir}`);
 
 const sourcePackage = JSON.parse(readFileSync(path.join(repository, 'package.json'), 'utf8'));
-const expectedVersion = sourcePackage.version;
+const expectedVersion = argValue('expected-version', sourcePackage.version);
 const expectedElectronVersion = sourcePackage.devDependencies?.electron;
 if (!/^\d+\.\d+\.\d+$/.test(expectedElectronVersion ?? '')) {
   throw new Error(`Electron must be pinned to an exact release version, got ${JSON.stringify(expectedElectronVersion)}`);
@@ -127,8 +127,10 @@ if (targetPlatform === 'win32') {
 }
 
 const extensionManifest = JSON.parse(readFileSync(path.join(resourcesDir, 'extension', 'manifest.json'), 'utf8'));
-if (extensionManifest.version !== expectedVersion) {
-  throw new Error(`Packaged extension ${extensionManifest.version} does not match app ${expectedVersion}`);
+// Chrome's numeric manifest version cannot carry an application prerelease suffix.
+const expectedExtensionVersion = argValue('expected-extension-version', expectedVersion);
+if (extensionManifest.version !== expectedExtensionVersion) {
+  throw new Error(`Packaged extension ${extensionManifest.version} does not match expected extension ${expectedExtensionVersion}`);
 }
 const tunnelVersion = readFileSync(path.join(resourcesDir, 'tunnel', 'VERSION'), 'utf8').trim();
 const rgVersion = readFileSync(path.join(resourcesDir, 'rg', 'VERSION'), 'utf8').trim();

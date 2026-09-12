@@ -342,7 +342,7 @@ describe('cross-platform packaging targets', () => {
     const ipc = readFileSync(path.join(root, 'src', 'main', 'ipc.ts'), 'utf8');
     const save = ipc.indexOf("handle('settings:save', async (payload) => {");
     const liveTheme = ipc.indexOf('nativeTheme.themeSource = next.ui.theme;', save);
-    const background = ipc.indexOf("getWindow()?.setBackgroundColor(next.ui.theme === 'dark' ? '#0e0e11' : '#ffffff');", liveTheme);
+    const background = ipc.indexOf("getWindow()?.setBackgroundColor(resolvedTheme(next.ui.theme, nativeTheme.shouldUseDarkColors) === 'dark' ? '#181a1d' : '#ffffff');", liveTheme);
     expect(save).toBeGreaterThan(-1);
     expect(liveTheme).toBeGreaterThan(save);
     expect(background).toBeGreaterThan(liveTheme);
@@ -359,7 +359,7 @@ describe('cross-platform packaging targets', () => {
     expect(builder.linux.syncDesktopName).toBe(true);
     expect(builder.linux.maintainer).toMatch(/^Chat On Steroids <[^>]+@users\.noreply\.github\.com>$/);
     expect(pkg.desktopName).toBe('com.chatonsteroids.app.desktop');
-    expect(pkg.homepage).toBe('https://github.com/totec448-spec/chat-on-steroids');
+    expect(pkg.homepage).toBe('https://github.com/ChaiAnAai/chat-on-steroids-unlimited-codex');
     expect(iconScript).toContain("build', 'icon.png'), pngFor(1024)");
 
     const packageScript = readFileSync(path.join(root, 'scripts', 'package.mjs'), 'utf8');

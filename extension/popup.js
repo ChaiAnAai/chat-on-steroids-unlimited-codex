@@ -20,6 +20,47 @@ let overwriteEnabled = true;
 let showTimes = false;
 let latest = { status: null, tab: null };
 let openedOnFailure = false;
+let accountPairBusy = false;
+let accountPairError = '';
+let accountUiEpoch = 0;
+let accountConfigLoaded = false;
+let accountPairState = null;
+function paintAccountPair(state) {
+  if (!state || state.ok !== true) return;
+  accountPairState = state;
+  if (!accountConfigLoaded && state.configuration && !$('accountConfiguration').value) $('accountConfiguration').value = JSON.stringify(state.configuration);
+  accountConfigLoaded = true;
+  const seconds = state.expiresAt ? Math.max(0, Math.ceil((state.expiresAt - Date.now()) / 1000)) : 0;
+  $('accountRequestBtn').disabled = accountPairBusy;
+  $('accountClaimBtn').disabled = accountPairBusy || !state.pending || seconds === 0;
+  $('accountRecheckBtn').disabled = accountPairBusy || !state.configuration;
+  $('accountPairStatus').textContent = accountPairError || (state.pending && seconds > 0
+    ? `请求 ${String(state.requestId || '').slice(0, 8)} 已提交，请核对知行中的请求编号，确认后点“完成配对”。剩余 ${seconds} 秒 · Match the request ID in 知行.`
+    : state.paired ? '配对已保存；登录身份待验证，自动执行与旧回执仍暂停。 · Identity verification pending.'
+      : seconds === 0 && state.expiresAt ? '配对已过期，请重新请求。 · Pairing expired.' : '复制配置并请求配对。登录身份未确认，任务不会自动启动。');
+}
+async function accountPairAction(type) {
+  if (accountPairBusy) return;
+  const epoch = ++accountUiEpoch; accountPairBusy = true; accountPairError = '';
+  for (const id of ['accountRequestBtn', 'accountClaimBtn', 'accountRecheckBtn']) $(id).disabled = true;
+  $('accountPairStatus').textContent = '正在处理… · Working…';
+  try {
+    const value = $('accountConfiguration').value.trim();
+    const result = await chrome.runtime.sendMessage({ type, ...(type === 'account_pair_request' && value ? { configuration: value } : {}) });
+    if (epoch !== accountUiEpoch) return;
+    if (!result?.ok) { accountPairError = result?.message || '操作失败，配置已保留，请重试。 · Request failed; configuration retained.'; }
+    else accountPairState = result;
+  } catch { if (epoch === accountUiEpoch) accountPairError = '扩展后台未响应，请重试或重新加载。 · Companion unavailable.'; }
+  finally {
+    if (epoch === accountUiEpoch) {
+      accountPairBusy = false;
+      paintAccountPair(accountPairState || { ok: true });
+    }
+  }
+}
+$('accountRequestBtn').addEventListener('click', () => void accountPairAction('account_pair_request'));
+$('accountClaimBtn').addEventListener('click', () => void accountPairAction('account_pair_claim'));
+$('accountRecheckBtn').addEventListener('click', () => void accountPairAction('account_pair_recheck'));
 
 // ------------------------------------------------------------------ formatting
 
@@ -206,15 +247,18 @@ function paintHeader(status) {
   const connected = status && status.connected === true;
   const paired = status && status.paired === true;
   const incompatible = connected && status.compatible === false;
+  const needsSetup = status && status.needsSetup === true;
   // Disconnected on purpose. This has to say so plainly rather than describing it as a
   // connection that has not finished yet, which is what it looked like back when the next
   // poll would silently undo it.
   const off = status && status.disconnected === true && !paired;
-  const ready = connected && paired && status.compatible === true;
+  const ready = connected && paired && !needsSetup && status.compatible === true;
 
   $('pill').className = `pill ${ready ? '' : incompatible ? 'bad' : 'off'}`;
   $('state').textContent = incompatible
     ? 'Version mismatch'
+    : needsSetup
+      ? 'Account setup required'
     : off
       ? 'Disconnected'
       : !connected
@@ -224,7 +268,7 @@ function paintHeader(status) {
           ? `App reachable · Port ${status.port}`
           : `Port ${status.port} · connecting`;
 
-  $('retryBtn').hidden = ready || incompatible;
+  $('retryBtn').hidden = ready || incompatible || needsSetup;
   $('retryBtn').textContent = off ? 'Connect' : 'Try again';
   $('unpairBtn').hidden = !paired || incompatible;
   return ready;
@@ -307,10 +351,13 @@ function paintDetails(status, info) {
 }
 
 async function refresh() {
-  const [status, info] = await Promise.all([
+  const epoch = accountUiEpoch;
+  const [status, info, account] = await Promise.all([
     chrome.runtime.sendMessage({ type: 'status' }),
-    chrome.runtime.sendMessage({ type: 'tabStatus' }).catch(() => null)
+    chrome.runtime.sendMessage({ type: 'tabStatus' }).catch(() => null),
+    chrome.runtime.sendMessage({ type: 'account_pair_status' }).catch(() => null)
   ]);
+  if (!accountPairBusy && epoch === accountUiEpoch) paintAccountPair(account);
   latest = { status, tab: info };
 
   const ready = paintHeader(status);
@@ -403,6 +450,7 @@ $('reloadBtn').addEventListener('click', () => {
 });
 
 $('retryBtn').addEventListener('click', async () => {
+  if (latest.status?.needsSetup) return;
   $('retryBtn').disabled = true;
   await chrome.runtime.sendMessage({ type: 'pair' });
   $('retryBtn').disabled = false;
@@ -410,6 +458,7 @@ $('retryBtn').addEventListener('click', async () => {
 });
 
 $('unpairBtn').addEventListener('click', async () => {
+  accountUiEpoch++; accountPairBusy = false; accountPairError = '';
   await chrome.runtime.sendMessage({ type: 'unpair' });
   await refresh();
 });

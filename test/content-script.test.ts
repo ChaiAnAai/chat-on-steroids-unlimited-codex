@@ -3205,7 +3205,7 @@ describe('canonical Fiber transcript ingestion in 1.8', () => {
     expect(emitted(live.sent, 'tool_evidence').at(-1)!.event.turnId).toBe(opened);
   });
 
-  it('publishes one stable native activity id and revises only its label', async () => {
+  it('publishes one native activity identity through label and summary-only revisions', async () => {
     live = await harness();
     startGenerating(live.document);
     assistantTurn(live.document, 'page-turn-activity', []);
@@ -3231,15 +3231,24 @@ describe('canonical Fiber transcript ingestion in 1.8', () => {
     await settle();
     await live.hook.flush();
 
+    await replyFiber([], [{ ...base,
+      activities: [{ messageId: 'thought-activity-uuid-0', label: 'Inspected the repository', detail: 'Now checking the renderer.' }]
+    }]);
+    await settle();
+    await live.hook.flush();
+
     const activity = emitted(live.sent, 'page_tool').map((entry) => entry.event);
     expect(activity.map((entry) => entry.messageId)).toEqual([
+      'thought-activity-uuid-0',
       'thought-activity-uuid-0',
       'thought-activity-uuid-0'
     ]);
     expect(activity.map((entry) => entry.text)).toEqual([
       'Inspecting the repository',
+      'Inspected the repository',
       'Inspected the repository'
     ]);
+    expect(activity.at(-1)!.detail).toBe('Now checking the renderer.');
   });
 
   it('keeps ChatGPT model order when a thinking headline and interim prose arrive in one scan', async () => {
@@ -3424,7 +3433,7 @@ describe('canonical Fiber transcript ingestion in 1.8', () => {
     expect(revisions.every((event) => event.state === 'streaming' && event.final === false)).toBe(true);
   });
 
-  it('fails closed for native activity without a stable site id and for generic busy captions', async () => {
+  it('requires a stable site id while retaining native busy captions and visible summaries', async () => {
     live = await harness();
     startGenerating(live.document);
     assistantTurn(live.document, 'page-turn-activity-closed', []);
@@ -3437,12 +3446,14 @@ describe('canonical Fiber transcript ingestion in 1.8', () => {
       messages: [],
       activities: [
         { label: 'Searched the web' },
-        { messageId: 'thought-busy-0', label: 'Thinking' }
+        { messageId: 'thought-busy-0', label: 'Thinking', detail: 'Checking the public status.' }
       ]
     }]);
     await settle();
     await live.hook.flush();
-    expect(emitted(live.sent, 'page_tool')).toHaveLength(0);
+    expect(emitted(live.sent, 'page_tool').map(row => row.event)).toEqual([
+      expect.objectContaining({ messageId: 'thought-busy-0', text: 'Thinking', detail: 'Checking the public status.' })
+    ]);
   });
 });
 
@@ -12947,7 +12958,7 @@ describe('one live isolated-world recorder per document', () => {
 
     await expect(live.runtimeMessage({ type: 'clf-recorder-ping' })).resolves.toEqual({
       ok: true,
-      recorderVersion: 11
+      recorderVersion: 12
     });
   });
 

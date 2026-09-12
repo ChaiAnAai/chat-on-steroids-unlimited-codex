@@ -19,6 +19,7 @@ export interface PluginConfigPatch {
 }
 export interface PluginInstallRequest extends PluginConfigPatch {
   catalogId?: string;
+  registry?: PluginRegistryReference & { authentication?: 'none' | 'oauth' };
 }
 export interface PluginField {
   key: string;
@@ -26,6 +27,8 @@ export interface PluginField {
   secret?: boolean;
   required?: boolean;
   placeholder?: string;
+  /** Public manifest prefix (for example Bearer), applied only in the secret store. */
+  valuePrefix?: string;
 }
 export interface PluginCatalogEntry {
   id: string;
@@ -53,6 +56,8 @@ export interface PluginView {
   id: string;
   name: string;
   catalogId?: string;
+  registry?: PluginRegistryReference;
+  registryInfo?: Pick<PluginRegistryEntry, 'description' | 'repository'>;
   source: PluginSource;
   config: Record<string, string>;
   credentialKeys: string[];
@@ -70,4 +75,29 @@ export interface PluginSnapshot {
   plugins: PluginView[];
   catalog: PluginCatalogEntry[];
   schemaRevision: number;
+}
+
+export interface PluginRegistryReference { name: string; version: string; optionId: string }
+export interface PluginRegistryQuery { search?: string; cursor?: string }
+export interface PluginRegistryOption {
+  id: string;
+  source: PluginSource;
+  fields: PluginField[];
+  defaults: Record<string, string>;
+}
+export interface PluginRegistryEntry {
+  name: string;
+  title: string;
+  description: string;
+  version: string;
+  homepage?: string;
+  repository?: string;
+  icons?: { src: string; theme?: 'light' | 'dark' }[];
+  options: PluginRegistryOption[];
+  unsupported: string[];
+}
+export interface PluginRegistryPage {
+  entries: PluginRegistryEntry[];
+  nextCursor?: string;
+  fetchedAt: number;
 }

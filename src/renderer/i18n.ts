@@ -4,9 +4,22 @@ export type Language = 'en' | 'zh-CN';
 const STORAGE_KEY = 'cos.ui.language';
 const catalog: Readonly<Record<string, string>> = zhCN;
 let language: Language = 'en';
-try { if (window.localStorage.getItem(STORAGE_KEY) === 'zh-CN') language = 'zh-CN'; } catch { /* Storage may be unavailable in a restricted renderer. */ }
+export function legacyLanguage(): Language | undefined {
+  try { const value = window.localStorage.getItem(STORAGE_KEY); return value === 'zh-CN' || value === 'en' ? value : undefined; } catch { return undefined; }
+}
+language = legacyLanguage() ?? 'en';
+let persistLanguage: ((value: Language) => void) | null = null;
+export function configureLanguagePersistence(save: (value: Language) => void): void { persistLanguage = save; }
+export function finishLanguageMigration(): void { try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* Main config already owns the value. */ } }
 
 export function currentLanguage(): Language { return language; }
+
+const languageListeners = new Set<() => void>();
+/** Form controllers reconcile their values after the shared language has changed. */
+export function onLanguageChanged(listener: () => void): () => void {
+  languageListeners.add(listener);
+  return () => { languageListeners.delete(listener); };
+}
 
 /** Translate only app-authored copy at explicit call sites. Arguments remain verbatim. */
 export function t(source: string, args: readonly unknown[] = []): string {
@@ -48,9 +61,10 @@ export function uiText(value: () => string): Text {
   return ui(document.createTextNode(''), 'textContent', value);
 }
 
-export function setLanguage(next: Language): void {
+export function setLanguage(next: Language, persist = true): void {
   language = next;
-  try { window.localStorage.setItem(STORAGE_KEY, next); } catch { /* The current window can still change language. */ }
+  if (persist) persistLanguage?.(next);
+  if (typeof document === 'undefined') return;
   document.documentElement.lang = next;
   syncLanguageControls();
   for (const ref of nodes) {
@@ -64,6 +78,7 @@ export function setLanguage(next: Language): void {
       write(node, property, binding.last);
     }
   }
+  for (const listener of languageListeners) listener();
 }
 
 /** Setup and settings project the same saved preference. */

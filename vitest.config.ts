@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
+    maxWorkers: Math.min(4, Math.max(1, Number(process.env.COS_TEST_WORKERS) || 4)),
     environment: 'node',
     // Real filesystem, real child processes and a real HTTP server, so the
     // defaults are too tight.

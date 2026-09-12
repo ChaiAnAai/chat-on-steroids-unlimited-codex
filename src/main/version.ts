@@ -12,14 +12,14 @@
  * extension does nothing" into a diagnosable mismatch.
  */
 
-export const APP_VERSION = '2.0.9';
+export const APP_VERSION = '2.1.0';
 
 /**
  * Standalone extension recovery must stay on the app's own release. Using GitHub's moving
  * `latest` asset can pair an older installed app with a newer, incompatible bridge protocol.
  */
 export function extensionDownloadUrl(version = APP_VERSION): string {
-  return `https://github.com/totec448-spec/chat-on-steroids/releases/download/v${encodeURIComponent(version)}/Chat-On-Steroids-Extension.zip`;
+  return `https://github.com/ChaiAnAai/chat-on-steroids-unlimited-codex/releases/download/v${encodeURIComponent(version)}/Chat-On-Steroids-Extension.zip`;
 }
 
 /**
@@ -66,4 +66,4 @@ export function extensionDownloadUrl(version = APP_VERSION): string {
  */
 // 13 — native file attachments require exact claimed-input chunk delivery and final
 // draft ownership. A 12 companion would silently send text without these files.
-export const BRIDGE_PROTOCOL = 13;
+export const BRIDGE_PROTOCOL = 14;

@@ -13,6 +13,7 @@ import type { PluginConfigPatch, PluginInstallRequest, PluginSnapshot, PluginVie
 import { installSource, pluginEnvironment, resolveGithub, stopInstallers, type InstalledLaunch } from './installer.js';
 import { terminateProcessTree } from '../exec.js';
 import { pluginCatalog, reviewedPluginLicense } from './catalog.js';
+import { pluginRegistry } from './registry.js';
 import sharp from 'sharp';
 import { pluginExposure } from './exposure.js';
 import { PluginOAuth, PluginNeedsAuth, PluginOAuthSetupError, clearPluginOAuth } from './oauth.js';
@@ -218,11 +219,14 @@ export class PluginManager {
     return result;
   }
   private async storeCredentials(row: RecordEntry, values: Record<string, string> = {}): Promise<void> {
-    for (const [key, value] of Object.entries(values)) {
+    for (const [key, raw] of Object.entries(values)) {
+      const prefix = row.fields?.find(f => f.key === key)?.valuePrefix;
+      const value = raw && prefix && !raw.startsWith(prefix) ? prefix + raw : raw;
       if (!/^[a-zA-Z_][a-zA-Z0-9_-]{0,100}$/.test(key) || typeof value !== 'string' || value.length > 16384)
         throw new Error('Invalid credential field');
       await setSecret(`plugin:${row.id}:${key}`, value);
       if (value) {
+        this.secretValues.add(raw);
         this.secretValues.add(value);
         if (!row.credentialKeys.includes(key)) row.credentialKeys.push(key);
       } else row.credentialKeys = row.credentialKeys.filter((k) => k !== key);
@@ -257,12 +261,18 @@ export class PluginManager {
       if (this.closing) throw new Error('Plugins are shutting down');
       if (this.records.length >= 24) throw new Error('At most 24 plugins may be installed');
       const catalog = pluginCatalog.find((p) => p.id === request.catalogId);
-      let source = structuredClone(request.source ?? catalog?.source);
+      const registry = request.registry ? await pluginRegistry.resolve(request) : undefined;
+      if (this.closing) throw new Error('Plugin installation cancelled by shutdown');
+      let source = structuredClone(registry?.source ?? request.source ?? catalog?.source);
       if (!source) throw new Error('Choose an integration or installation source');
       if (source.auth && source.kind !== 'remote') throw new Error('OAuth requires a remote source.');
       if (source.kind === 'github') source = resolveGithub(source);
       if (source.kind === 'remote') this.remoteUrl(source.url);
-      this.validateConfig(request.config ?? {});
+      const config = registry?.config ?? request.config ?? {};
+      this.validateConfig(config);
+      if (registry && this.records.some(row => row.registry?.name === registry.entry.name && row.registry.optionId === registry.option.id ||
+          row.source.kind === source.kind && (source.kind === 'remote' ? row.source.url === source.url : row.source.package === source.package)))
+        throw new Error('This MCP is already installed. Open its existing connection.');
       const id = randomUUID(),
         directory = path.join(this.root, id, randomUUID());
       let row: RecordEntry | undefined;
@@ -271,10 +281,10 @@ export class PluginManager {
         if (this.closing) throw new Error('Plugin installation cancelled by shutdown');
         row = {
           id,
-          name: (request.name ?? catalog?.name ?? source.package ?? 'Custom MCP').slice(0, 100),
+          name: (registry?.entry.title ?? request.name ?? catalog?.name ?? source.package ?? 'Custom MCP').slice(0, 100),
           catalogId: catalog?.id,
           source,
-          config: request.config ?? {},
+          config,
           credentialKeys: [],
           version: launch.version,
           license: launch.license,
@@ -287,6 +297,7 @@ export class PluginManager {
           launch,
           disabledTools: [],
           ...this.installationMetadata(launch, catalog?.id),
+          ...(registry ? { registry: {name:registry.entry.name,version:registry.entry.version,optionId:registry.option.id}, registryInfo:{description:registry.entry.description,repository:registry.entry.repository}, fields:registry.option.fields, homepage:registry.entry.homepage } : {}),
         };
         if (launch.manifest) {
           const manifest = vAny.McpbManifestSchema.parse(launch.manifest);
@@ -294,7 +305,7 @@ export class PluginManager {
         }
         if (row.fields?.some((f) => f.secret && f.key in row!.config))
           throw new Error('Store sensitive bundle fields in secure credentials');
-        await this.storeCredentials(row, request.credentials);
+        await this.storeCredentials(row, registry?.credentials ?? request.credentials);
         this.records.push(row);
         try {
           await this.save();
@@ -387,10 +398,12 @@ export class PluginManager {
       if (this.closing) throw new Error('Plugin update cancelled by shutdown');
       const catalogId = pluginCatalog.find((p) => p.id === row.catalogId && JSON.stringify(p.source) === JSON.stringify(source))?.id;
       const metadata = this.installationMetadata(launch, catalogId);
+      const registry = JSON.stringify(row.source) === JSON.stringify(source) ? row.registry : undefined;
+      if (registry) { metadata.fields = row.fields; metadata.homepage = row.homepage; }
       if (metadata.fields?.some((f) => f.secret && f.key in config))
         throw new Error('Store sensitive bundle fields in secure credentials');
       await this.disconnect(row);
-      Object.assign(row, { source, directory, launch, version: launch.version, license: launch.license, config, catalogId, ...metadata });
+      Object.assign(row, { source, directory, launch, version: launch.version, license: launch.license, config, catalogId, registry, registryInfo:registry?row.registryInfo:undefined, ...metadata });
       if (row.enabled) {
         await this.connect(row);
         if (row.status !== 'ready' && row.status !== 'needs-auth') throw new Error(row.error ?? 'New server did not become ready');
