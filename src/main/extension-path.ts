@@ -33,6 +33,7 @@ function extensionFingerprint(root: string): string {
   const visit = (dir: string, relativeDir = ''): void => {
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
+      if (!relativeDir && entry.name === MATERIALIZED_FINGERPRINT) continue;
       const relative = relativeDir ? path.posix.join(relativeDir, entry.name) : entry.name;
       const absolute = path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -111,7 +112,11 @@ function materializePackagedExtension(bundled: string, stable: string): string |
   // folder so Chrome and Finder do not lose a working extension merely because refresh is broken.
   if (!validExtension(bundled)) return validExtension(stable) ? stable : null;
   const fingerprint = extensionFingerprint(bundled);
-  if (validExtension(stable) && materializedFingerprint(stable) === fingerprint) return stable;
+  if (validExtension(stable) && materializedFingerprint(stable) === fingerprint) {
+    // The marker identifies the source version, not the current contents. Repair deleted or
+    // edited files as well as version upgrades, without changing Chrome's remembered pathname.
+    try { if (extensionFingerprint(stable) === fingerprint) return stable; } catch { /* Restage below. */ }
+  }
   rmSync(stage, { recursive: true, force: true });
 
   let oldMoved = false;
@@ -182,4 +187,21 @@ export function extensionDir(): string | null {
     if (existsSync(path.join(candidate, 'manifest.json'))) return candidate;
   }
   return null;
+}
+
+/** Installation UI must not report a failed refresh as a successful repair. */
+export function prepareExtensionDir(): string {
+  const dir = extensionDir();
+  if (!dir) throw new Error('The bundled extension is missing. Reinstall this app version to restore it.');
+  const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+  if (manifest.manifest_version !== 3 || typeof manifest.version !== 'string' || !statSync(path.join(dir, 'background.js')).isFile()) {
+    throw new Error('The extension files are incomplete. Restore this app version and retry.');
+  }
+  if (app.isPackaged) {
+    const bundled = path.join(process.resourcesPath, 'extension');
+    if (validExtension(bundled) && extensionFingerprint(dir) !== extensionFingerprint(bundled)) {
+      throw new Error('The extension folder could not be updated. Close the browser extension page and retry.');
+    }
+  }
+  return dir;
 }

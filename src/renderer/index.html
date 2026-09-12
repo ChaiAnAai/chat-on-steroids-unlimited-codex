@@ -166,26 +166,21 @@
 
       <main>
       <nav id="tabs" aria-label="Settings navigation" hidden>
-        <button data-tab="appearance" type="button">Appearance</button>
-        <button data-tab="skills" type="button">Skills</button>
-        <button class="is-sel" data-tab="home" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-home" /></svg>Workspace
-        </button>
-        <button data-tab="usage" type="button"><svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>Usage</button>
-
-<button data-tab="setup" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-steps" /></svg>Setup
-          <span class="badge" id="setupBadge" hidden></span>
-        </button>
-        <button data-tab="settings" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-chat" /></svg>Agents &amp; automation
-        </button>
-        <button data-tab="activity" type="button">
-          <svg class="ico" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>Activity
-        </button>
+        <div class="settings-nav-group" role="group" aria-labelledby="settingsGeneralLabel">
+          <span class="settings-nav-label" id="settingsGeneralLabel">General</span>
+          <div class="settings-nav-items"><button data-tab="appearance" type="button">Appearance</button><button class="is-sel" data-tab="home" type="button">Workspace</button></div>
+        </div>
+        <div class="settings-nav-group" role="group" aria-labelledby="settingsConnectionsLabel">
+          <span class="settings-nav-label" id="settingsConnectionsLabel">Connections &amp; capabilities</span>
+          <div class="settings-nav-items"><button data-tab="setup" type="button">Connections &amp; extensions<span class="badge" id="setupBadge" hidden></span></button><button data-tab="plugins" type="button">Plugins</button><button data-tab="skills" type="button">Skills</button></div>
+        </div>
+        <div class="settings-nav-group" role="group" aria-labelledby="settingsOperationsLabel">
+          <span class="settings-nav-label" id="settingsOperationsLabel">Execution &amp; diagnostics</span>
+          <div class="settings-nav-items"><button data-tab="settings" type="button">Agents &amp; automation</button><button data-tab="usage" type="button">Usage</button><button data-tab="activity" type="button">Activity</button></div>
+        </div>
       </nav>
 <div id="settingsSaveFeedback" role="status" hidden></div>
-        <section class="panel appearance-panel" data-panel="appearance"><div class="settings-heading"><h1>Appearance</h1><p>A workspace that feels right, day and night.</p></div><div class="appearance-layout"><div class="appearance-controls"><section class="appearance-section"><h2>Theme</h2><p>Choose a theme or follow your system.</p><div class="theme-choices" role="group" aria-label="Theme"><button type="button" data-theme-choice="light" aria-pressed="false"><span class="theme-thumbnail theme-light" aria-hidden="true"><i></i><i></i></span><span>Light</span></button><button type="button" data-theme-choice="dark" aria-pressed="false"><span class="theme-thumbnail theme-dark" aria-hidden="true"><i></i><i></i></span><span>Dark</span></button><button type="button" data-theme-choice="system" aria-pressed="false"><span class="theme-thumbnail theme-system" aria-hidden="true"><i></i><i></i></span><span>System</span></button></div></section><section class="appearance-section"><h2>Accent color</h2><div class="accent-choices" role="group" aria-label="Accent color"><button type="button" data-accent-choice="neutral" aria-pressed="false"><i aria-hidden="true"></i><span>Neutral</span></button><button type="button" data-accent-choice="blue" aria-pressed="false"><i aria-hidden="true"></i><span>Blue</span></button><button type="button" data-accent-choice="teal" aria-pressed="false"><i aria-hidden="true"></i><span>Teal</span></button><button type="button" data-accent-choice="violet" aria-pressed="false"><i aria-hidden="true"></i><span>Violet</span></button><button type="button" data-accent-choice="amber" aria-pressed="false"><i aria-hidden="true"></i><span>Amber</span></button></div></section><section class="appearance-section"><label class="setting"><span class="setting-text"><b>Interface size</b><em>Text size; window zoom stays independent.</em></span><select id="interfaceSize" aria-label="Interface size"><option value="13">13 px</option><option value="14">14 px</option><option value="15">15 px</option><option value="16">16 px</option></select></label><label class="setting"><span class="setting-text"><b>Code size</b><em>Code blocks and tool output.</em></span><select id="codeSize" aria-label="Code size"><option value="12">12 px</option><option value="13">13 px</option><option value="14">14 px</option><option value="15">15 px</option><option value="16">16 px</option></select></label><label class="setting"><span class="setting-text"><b>Density</b><em>Space between controls and list items.</em></span><select id="appearanceDensity" aria-label="Density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label></section><button class="btn" id="resetAppearance" type="button">Restore default appearance</button></div><section id="appearancePreview" class="appearance-preview" aria-label="Live preview"></section></div></section>
+        <section class="panel appearance-panel" data-panel="appearance"><div class="settings-heading"><h1>Appearance</h1><p>A workspace that feels right, day and night.</p></div><div class="appearance-layout"><div class="appearance-controls"><section class="appearance-section"><h2>Language</h2><label class="setting" for="uiLanguage"><span class="setting-text"><b>Language</b><em>Changes the app interface immediately. Your messages stay as written.</em></span><select id="uiLanguage" class="language-select" translate="no"><option value="en" lang="en">English</option><option value="zh-CN" lang="zh-CN">简体中文</option></select></label></section><section class="appearance-section"><h2>Theme</h2><p>Choose a theme or follow your system.</p><div class="theme-choices" role="group" aria-label="Theme"><button type="button" data-theme-choice="light" aria-pressed="false"><span class="theme-thumbnail theme-light" aria-hidden="true"><i></i><i></i></span><span>Light</span></button><button type="button" data-theme-choice="dark" aria-pressed="false"><span class="theme-thumbnail theme-dark" aria-hidden="true"><i></i><i></i></span><span>Dark</span></button><button type="button" data-theme-choice="system" aria-pressed="false"><span class="theme-thumbnail theme-system" aria-hidden="true"><i></i><i></i></span><span>System</span></button></div></section><section class="appearance-section"><h2>Accent color</h2><div class="accent-choices" role="group" aria-label="Accent color"><button type="button" data-accent-choice="neutral" aria-pressed="false"><i aria-hidden="true"></i><span>Neutral</span></button><button type="button" data-accent-choice="blue" aria-pressed="false"><i aria-hidden="true"></i><span>Blue</span></button><button type="button" data-accent-choice="teal" aria-pressed="false"><i aria-hidden="true"></i><span>Teal</span></button><button type="button" data-accent-choice="violet" aria-pressed="false"><i aria-hidden="true"></i><span>Violet</span></button><button type="button" data-accent-choice="amber" aria-pressed="false"><i aria-hidden="true"></i><span>Amber</span></button></div></section><section class="appearance-section"><label class="setting"><span class="setting-text"><b>Interface size</b><em>Text size; window zoom stays independent.</em></span><select id="interfaceSize" aria-label="Interface size"><option value="13">13 px</option><option value="14">14 px</option><option value="15">15 px</option><option value="16">16 px</option></select></label><label class="setting"><span class="setting-text"><b>Code size</b><em>Code blocks and tool output.</em></span><select id="codeSize" aria-label="Code size"><option value="12">12 px</option><option value="13">13 px</option><option value="14">14 px</option><option value="15">15 px</option><option value="16">16 px</option></select></label><label class="setting"><span class="setting-text"><b>Density</b><em>Space between controls and list items.</em></span><select id="appearanceDensity" aria-label="Density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label></section><button class="btn" id="resetAppearance" type="button">Restore default appearance</button></div><section id="appearancePreview" class="appearance-preview" aria-label="Live preview"></section></div></section>
         <section class="panel skills-panel" data-panel="skills" id="skillsPanel"></section>
         <section class="panel plugins-panel" data-panel="plugins">
           <div class="plugins-content">
@@ -321,9 +316,15 @@
         <!-- =========================================================== Setup -->
         <section class="panel scroll" data-panel="setup">
           <div class="sheet">
-            <details class="card build-identity"><summary>About Chat On Steroids</summary><p id="buildIdentity" class="hint"></p></details>
             <div class="setup-heading">
-              <div class="settings-heading"><h1>Setup</h1><p>Connect your workspace to ChatGPT.</p></div>
+              <div class="settings-heading"><h1>Connections &amp; extensions</h1><p>Manage Core, Desktop and Plugins connections and the companion browser extension in one place.</p></div>
+            </div>
+            <div class="connection-shortcuts" role="group" aria-label="Connection settings shortcuts">
+              <button class="btn" type="button" id="connectionAccounts">Account management</button>
+              <button class="btn" type="button" data-connection-step="tunnel">Connector tunnels</button>
+              <button class="btn" type="button" data-connection-step="key">Tunnel API key</button>
+              <button class="btn" type="button" data-connection-step="browser">Browser extension installation</button>
+              <button class="btn" type="button" data-connection-step="chatgpt">ChatGPT connector details</button>
             </div>
             <div id="connectionOverview"></div>
             <p class="connection-prerequisite" id="connectionPrerequisite" role="status" hidden></p>
@@ -407,6 +408,13 @@
                       second tunnel. Create another one and paste its ID here. Leave it empty to
                       keep desktop control off in ChatGPT.
                     </p>
+                  </div>
+                  <div class="field" id="pluginsTunnelField">
+                    <label for="pluginsTunnelId">Plugins tunnel ID <span class="tag">optional</span></label>
+                    <input id="pluginsTunnelId" type="text" spellcheck="false" autocomplete="off" placeholder="tunnel_0123456789abcdef0123456789abcdef" />
+                    <p class="hint">External MCP plugins use their own Plugins tunnel. Core and Desktop cannot replace it. All three use the tunnel API key below.</p>
+                    <p class="hint" id="pluginSetupStatus" role="status"></p>
+                    <p class="hint">Changes save automatically. After connecting, refresh Chat On Steroids Plugins in ChatGPT to load the enabled tools.</p>
                   </div>
                 </div>
               </li>
@@ -517,21 +525,30 @@
                   <svg class="ico tick" viewBox="0 0 24 24"><use href="#i-check" /></svg>
                 </div>
                 <div class="step-body">
-                  <h3>Add the Chrome extension</h3>
+                  <h3>Browser extension installation</h3>
                   <p>
-                    Open <code>chrome://extensions</code>, turn on <strong>Developer mode</strong>,
-                    choose <strong>Load unpacked</strong> and pick the folder the button opens. It
-                    pairs with this app by itself — there is no code to type.
+                    The matching extension is included with this app. Prepare its folder, copy the installation path, then load that folder in Chrome or Edge.
                   </p>
-                  <p class="hint is-required">
-                    <strong>Required for sub-agents:</strong> the companion extension must be loaded
-                    and connected in ChatGPT. Without it, Chat On Steroids cannot identify, open or
-                    coordinate worker chats.
-                  </p>
+                  <ol class="extension-install-steps">
+                    <li>Copy the installation path shown below.</li>
+                    <li>Open chrome://extensions or edge://extensions in the account's browser profile and enable Developer mode.</li>
+                    <li>Choose Load unpacked, paste the path into the folder picker and select that folder. Then return here to confirm the account connection.</li>
+                  </ol>
+                  <p class="hint">Installed builds keep this folder in application data, outside the program installation directory. Do not move or delete it after loading. After an app update, reload the extension in the browser.</p>
+                  <label for="extensionPath">Extension installation path</label>
+                  <input class="extension-install-path" id="extensionPath" type="text" readonly spellcheck="false" />
                   <div class="step-actions">
-                    <button class="btn btn-solid" id="bridgeFolder" type="button">
+                    <button class="btn btn-solid" id="bridgeCopyPath" type="button">Copy installation path</button>
+                    <button class="btn" id="bridgeFolder" type="button">
                       <svg class="ico" viewBox="0 0 24 24"><use href="#i-folder" /></svg>Open extension folder
                     </button>
+                    <button class="btn" id="bridgePrepare" type="button">Prepare / repair extension folder</button>
+                    <span class="chosen" id="bridgeState"></span>
+                  </div>
+                  <div id="extensionSetupFeedback" role="status" hidden></div>
+                  <details class="extension-extra"><summary>More extension actions</summary>
+                  <p class="hint">ZIP export is an optional backup. For this computer, load the installation path above; no separate download or extraction is needed.</p>
+                  <div class="step-actions">
                     <button
                       class="btn"
                       id="bridgeDownload"
@@ -540,9 +557,8 @@
                       <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg>Save bundled extension ZIP
                     </button>
                     <button class="btn" id="bridgeUnpair" type="button">Disconnect browser</button>
-                    <span class="chosen" id="bridgeState"></span>
                   </div>
-                  <p class="hint" id="extensionPath"></p>
+                  </details>
                 </div>
               </li>
             </ol>
@@ -581,6 +597,7 @@
               </div>
             </details>
             </details>
+            <details class="card build-identity"><summary>About Chat On Steroids</summary><p id="buildIdentity" class="hint"></p></details>
           </div>
         </section>
 
@@ -635,12 +652,8 @@
                 the rest of the once-only work already lives.
               -->
               <div class="view" data-view="settings" hidden>
-                <div class="settings-heading"><h1>Agents &amp; automation</h1><p>Fine-tune your workspace and the way your agents work.</p><label class="sr-only" for="settingsSearch">Search settings</label><input id="settingsSearch" type="search" placeholder="Search settings…" /></div>
+                <div class="settings-heading"><h1>Agents &amp; automation</h1><p>Fine-tune your workspace and the way your agents work.</p><label class="sr-only" for="settingsSearch">Search automation settings</label><input id="settingsSearch" type="search" placeholder="Search automation settings…" /></div>
                 <p id="settingsSearchEmpty" class="muted" role="status" hidden>No settings match your search.</p>
-                <h2 class="settings-section-title">Appearance</h2>
-                <div class="pane">
-                  <label class="setting" for="uiLanguage"><span class="setting-text"><b>Language</b><em>Changes the app interface immediately. Your messages stay as written.</em></span><select id="uiLanguage" class="language-select" translate="no"><option value="en" lang="en">English</option><option value="zh-CN" lang="zh-CN">简体中文</option></select></label>
-                </div>
                 <h2 class="settings-section-title">Continuation sources</h2>
                 <div class="pane">
                   <div class="setting"><span class="setting-text"><b>Goal response source</b><em>API is the most reliable. Offline uses completion markers and 200 prepared messages.</em></span><select id="goalBackend"><option value="chatgpt">Separate ChatGPT chat</option><option value="api">API key · Most reliable</option><option value="templates">Offline · No API cost</option></select></div>

@@ -57,7 +57,7 @@ it('distinguishes a serving connector from evidence of ChatGPT contact', () => {
   applyPluginsState({ config: { tunnel: { kind: 'manual' } }, status: { surfaces: [{ id: 'plugins', state: 'live', connectorName: 'Chat On Steroids Plugins', description: 'Plugins', localUrl: 'http://localhost/mcp', lastRequestAt: null }] } } as unknown as AppState);
   expect(document.getElementById('pluginsConnectionStatus')!.textContent).toBe('Connector online · waiting for ChatGPT');
   expect(document.getElementById('pluginsSetup')).toBeNull();
-  expect(document.querySelector('[data-panel="setup"] #pluginsTunnelId')).toBeNull();
+  expect(document.querySelector('[data-panel="setup"] #pluginsTunnelId')).not.toBeNull();
   expect(document.querySelector('.plugin-connection')!.classList.contains('is-configured')).toBe(true);
   expect(document.getElementById('pluginsSetupLink')!.textContent).toBe('Configure Plugins connection');
 });
@@ -84,22 +84,15 @@ it('keeps first-use setup and the connector-refresh instruction visible, includi
   expect(api.openLink).toHaveBeenCalledWith('https://chatgpt.com/#settings/Plugins');
 });
 
-it('keeps plugin connection setup local, preserves a draft and saves through the existing settings authority', async () => {
-  const next = { hasApiKey: true, config: { tunnel: { kind: 'openai', tunnelId: 'core-original', pluginsTunnelId: 'plugins-original' }, ui: { theme: 'dark' } }, status: { surfaces: [{ id: 'plugins', state: 'live', tools: ['get_scene_info'], connectorName: 'Chat On Steroids Plugins', description: 'External tools', lastRequestAt: 1 }] } } as unknown as AppState;
-  initPlugins(); applyPluginsState(next); await tick();
+it('routes plugin configuration to the unified settings form without a second dialog', async () => {
+  const navigate = vi.fn();
+  initPlugins(navigate); await tick();
   document.getElementById('pluginsSetupLink')!.click();
-  expect(document.getElementById('pluginDialogTitle')!.textContent).toBe('Plugin setup');
-  const input = document.querySelector<HTMLInputElement>('#pluginDialog #pluginsTunnelId')!;
-  input.value = 'plugins-new'; input.focus();
-  const updated = structuredClone(next); updated.config.tunnel.tunnelId = 'core-concurrent';
-  applyPluginsState(updated);
-  expect(document.getElementById('pluginsTunnelId')).toBe(input);
-  expect(input.value).toBe('plugins-new');
-  api.saveSettings!.mockResolvedValue({ ok: true, data: updated }); api.connect!.mockResolvedValue({ ok: true, data: updated });
-  [...document.querySelectorAll<HTMLButtonElement>('#pluginDialog button')].find(node => node.textContent === 'Save & connect')!.click(); await tick();
-  expect(api.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ tunnel: expect.objectContaining({ tunnelId: 'core-concurrent', pluginsTunnelId: 'plugins-new' }) }), expect.objectContaining({ tunnel: expect.objectContaining({ tunnelId: 'core-concurrent', pluginsTunnelId: 'plugins-original' }) }));
-  expect(document.querySelector('[data-panel="setup"] #pluginsTunnelId')).toBeNull();
-  expect(document.querySelector('#pluginDialog .plugin-tools')).toBeNull();
+  expect(navigate).toHaveBeenCalledOnce();
+  expect(document.getElementById('pluginDialog')).toBeNull();
+  expect(document.querySelectorAll('#pluginsTunnelId')).toHaveLength(1);
+  expect(document.querySelector('[data-panel="setup"] #pluginsTunnelId')).not.toBeNull();
+  expect(api.saveSettings).not.toHaveBeenCalled();
 });
 
 it('explains starting enabled runtimes and tool publication conflicts', async () => {

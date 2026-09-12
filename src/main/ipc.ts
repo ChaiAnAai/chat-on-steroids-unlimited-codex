@@ -78,7 +78,7 @@ import {
   sweepStaleSwarm,
   unpair
 } from './bridge.js';
-import { extensionDir } from './extension-path.js';
+import { extensionDir, prepareExtensionDir } from './extension-path.js';
 import { extensionArchive } from './extension-export.js';
 import {
   deleteSession,
@@ -1016,18 +1016,20 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
    * path the renderer did not choose.
    */
   handle('bridge:openExtensionFolder', async () => {
-    const dir = extensionDir();
-    if (!dir) {
-      throw new Error(
-        'The extension folder is missing from this installation. Reinstall the app, or use the extension/ folder from the source checkout.'
-      );
-    }
+    const dir = prepareExtensionDir();
     const error = await shell.openPath(dir);
     if (error) throw new Error(`Could not open the extension folder: ${error}`);
     return dir;
   });
 
-  handle('bridge:extensionPath', async () => extensionDir());
+  handle('bridge:extensionPath', async () => prepareExtensionDir());
+
+  handle('bridge:copyExtensionPath', async () => {
+    const dir = prepareExtensionDir();
+    // Resolve again in the main process; never copy a stale or renderer-supplied install path.
+    clipboard.writeText(dir);
+    return dir;
+  });
 
   // ----------------------------------------------------------------- swarm
 

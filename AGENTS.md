@@ -1573,6 +1573,14 @@ a bundler. `electron-builder.yml` puts executable tunnel/rg, extension and requi
 payloads outside asar. `extension-path.ts` transactionally mirrors the packaged extension to
 stable `userData/extension`, never an ephemeral AppImage mount.
 
+Connection configuration has one renderer owner: `main.ts` / the Setup panel contains Core,
+Desktop and Plugins tunnel fields. The plugin page navigates there; do not restore a second
+connection dialog or independent settings save path. Extension installation uses
+`prepareExtensionDir()` for path display, copying and opening. Verify actual materialized
+contents, not only the source marker; failed repair is not installation success. ZIP export
+is a secondary backup action. Package only `out/main`, `out/preload`, and `out/renderer`;
+local diagnostic artifacts under other `out/` paths are not runtime payloads.
+
 `extension-export.ts` exports that companion plus the app license through the fixed
 `bridge:downloadExtension` save operation. Cancellation is not success; missing or invalid
 bundles fail visibly. Never infer a downloadable release asset from a preview version string.

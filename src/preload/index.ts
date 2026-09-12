@@ -204,6 +204,7 @@ const api = {
   // path it gets back is only ever displayed: the open happens in the main process
   // against a folder the renderer never chose.
   extensionPath: () => call<string | null>('bridge:extensionPath'),
+  copyExtensionPath: () => call<string>('bridge:copyExtensionPath'),
   openExtensionFolder: () => call<string>('bridge:openExtensionFolder'),
 
   getSwarm: () => call<SwarmState>('swarm:get'),

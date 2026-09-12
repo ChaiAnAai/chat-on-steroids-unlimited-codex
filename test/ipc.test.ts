@@ -18,7 +18,7 @@ vi.mock('electron', () => ({
     removeHandler: (channel: string) => handlers.delete(channel)
   },
   BrowserWindow: class {},
-  clipboard: { readText: () => '', writeText: () => undefined },
+  clipboard: { readText: () => '', writeText: vi.fn() },
   dialog: { showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] as string[] })), showSaveDialog: vi.fn(async () => ({ canceled: true, filePath: undefined as string | undefined })) },
   shell: { openExternal: vi.fn(async () => undefined), openPath: vi.fn(async () => '') },
   nativeTheme: { themeSource: 'system' },
@@ -32,7 +32,7 @@ vi.mock('electron', () => ({
 }));
 
 // This suite owns IPC behavior, not Electron's packaged-vs-checkout path discovery.
-vi.mock('../src/main/extension-path.js', () => ({ extensionDir: () => process.cwd() + '/extension' }));
+vi.mock('../src/main/extension-path.js', () => ({ extensionDir: () => process.cwd() + '/extension', prepareExtensionDir: () => process.cwd() + '/extension' }));
 vi.mock('../src/main/browser.js', () => ({ openInPreferredBrowser: vi.fn(async () => 'chrome.exe') }));
 
 const { defaultConfig, getConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
@@ -490,6 +490,15 @@ describe('bounded IPC identities and OS launch results', () => {
     };
     expect(reply.ok).toBe(false);
     expect(reply.error).toMatch(/could not open.*access is denied/i);
+  });
+
+  it('copies the same backend-resolved path that opening the folder uses, ignoring renderer input', async () => {
+    const { clipboard } = await import('electron');
+    const expected = process.cwd() + '/extension';
+    expect(await handlers.get('bridge:copyExtensionPath')!(null, { path: 'untrusted' })).toEqual({ ok: true, data: expected });
+    expect(clipboard.writeText).toHaveBeenCalledWith(expected);
+    expect(await handlers.get('bridge:openExtensionFolder')!(null, { path: 'untrusted' })).toEqual({ ok: true, data: expected });
+    expect(shell.openPath).toHaveBeenCalledWith(expected);
   });
 
   it('exports the bundled companion without requesting an unpublished preview release', async () => {

@@ -24,7 +24,7 @@ it('materializes a packaged extension into a stable per-user folder', async () =
   const bundled = path.join(resources, 'extension');
   const userData = path.join(base, 'user-data');
   await fs.mkdir(path.join(bundled, 'icons'), { recursive: true });
-  await fs.writeFile(path.join(bundled, 'manifest.json'), JSON.stringify({ version: '9.9.9' }));
+  await fs.writeFile(path.join(bundled, 'manifest.json'), JSON.stringify({ manifest_version: 3, version: '9.9.9' }));
   await fs.writeFile(path.join(bundled, 'background.js'), 'current package');
   await fs.writeFile(path.join(bundled, 'icons', 'icon128.png'), 'icon');
 
@@ -41,12 +41,13 @@ it('materializes a packaged extension into a stable per-user folder', async () =
     }
   }));
 
-  const { extensionDir } = await import('../src/main/extension-path.js');
+  const { extensionDir, prepareExtensionDir } = await import('../src/main/extension-path.js');
   const first = extensionDir();
   expect(first).toBe(path.join(userData, 'extension'));
   expect(first).not.toContain('ephemeral-appimage-mount');
   expect(await fs.readFile(path.join(first!, 'background.js'), 'utf8')).toBe('current package');
   expect(await fs.readFile(path.join(first!, 'icons', 'icon128.png'), 'utf8')).toBe('icon');
+  expect(prepareExtensionDir()).toBe(first);
 
   // An app update refreshes files at the same Chrome-visible path rather than asking the user
   // to Load unpacked again from a new versioned directory.
@@ -54,11 +55,20 @@ it('materializes a packaged extension into a stable per-user folder', async () =
   expect(extensionDir()).toBe(first);
   expect(await fs.readFile(path.join(first!, 'background.js'), 'utf8')).toBe('updated package');
 
+  // The version marker can survive accidental damage. Repair contents at the same path.
+  await fs.unlink(path.join(first!, 'background.js'));
+  await fs.writeFile(path.join(first!, 'icons', 'icon128.png'), 'corrupted icon');
+  expect(extensionDir()).toBe(first);
+  expect(await fs.readFile(path.join(first!, 'background.js'), 'utf8')).toBe('updated package');
+  expect(await fs.readFile(path.join(first!, 'icons', 'icon128.png'), 'utf8')).toBe('icon');
+
   // Once a complete stable copy exists, later package damage must not make the Finder/Chrome
   // path disappear. The source is used to refresh; the stable copy is what the user loaded.
   await fs.rm(path.join(bundled, 'manifest.json'));
   expect(extensionDir()).toBe(first);
   expect(await fs.readFile(path.join(first!, 'background.js'), 'utf8')).toBe('updated package');
+  await fs.unlink(path.join(first!, 'background.js'));
+  expect(() => prepareExtensionDir()).toThrow();
 });
 
 it('repairs a stale destination shape with a complete staged extension instead of failing mid-copy', async () => {

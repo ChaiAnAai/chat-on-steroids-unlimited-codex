@@ -1,6 +1,5 @@
 import { ui, t } from './i18n.js';
 import type { AppState } from '../shared/types.js';
-import type { SettingsPatch } from '../preload/index.js';
 import type { PluginSnapshot, PluginView, PluginCatalogEntry, PluginSource, PluginRegistryEntry } from '../shared/plugins.js';
 import { mountPluginMarketplace } from './plugin-marketplace.js';
 import { mcpLogo, originalDescription, purposeText } from './mcp-presentation.js';
@@ -9,8 +8,6 @@ import { $, el, run, toast, feedback } from './dom.js';
 
 let snapshot: PluginSnapshot = { plugins: [], catalog: [], schemaRevision: 0 };
 let epoch = 0;
-let appState: AppState | null = null;
-let applyAppState: (next: AppState) => void = () => {};
 let marketplace: ReturnType<typeof mountPluginMarketplace> | undefined;
 const artwork = import.meta.glob('./plugin-icons/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 function button(label: string | (() => string), action: () => void | Promise<void>, primary = false): HTMLButtonElement {
@@ -66,7 +63,6 @@ export async function refreshPlugins(): Promise<void> {
   finally { button.disabled = false; button.removeAttribute('aria-busy'); ui(button, 'textContent', () => t('Check local status')); }
 }
 export function applyPluginsState(next: AppState): void {
-  appState = next;
   const surface = next.status.surfaces.find((item) => item.id === 'plugins');
   const status = $('pluginsConnectionStatus');
   const contacted = surface?.state === 'live' && !!surface.lastRequestAt;
@@ -87,53 +83,9 @@ export function applyPluginsState(next: AppState): void {
   status.title = surface?.detail ?? '';
   const setupStatus = document.getElementById('pluginSetupStatus');
   if (setupStatus) ui(setupStatus, 'textContent', () => surface?.state === 'live'
-    ? t("{0} tools available · {1}", [surface.tools.length, surface.lastRequestAt ? t("Connected to ChatGPT") : t("Ready to add in ChatGPT")])
+    ? t("{0} tools available · {1}", [surface.tools?.length ?? 0, surface.lastRequestAt ? t("Connected to ChatGPT") : t("Ready to add in ChatGPT")])
     : missingTunnel ? t("The Plugins tunnel ID is missing. Core and Desktop connections do not publish external plugins. Save your existing Plugins tunnel here before refreshing in ChatGPT.")
       : surface?.state === 'error' ? surface.detail : t("Save your connection below to make enabled plugins available in ChatGPT."));
-}
-function showConnection(): void {
-  if (!appState) { toast(t("Connection settings are still loading.")); return; }
-  const { config, hasApiKey, status } = appState;
-  const surface = status.surfaces.find(item => item.id === 'plugins');
-  const { body } = dialog(() => t("Plugin setup"));
-  body.append(el('p', '', () => t("Connect once. Your enabled plugins share this connector in ChatGPT.")));
-  const connectionStatus = el('p', 'plugin-setup-status'); connectionStatus.id = 'pluginSetupStatus'; body.append(connectionStatus);
-  const copy = (label: string, value: string) => {
-    const input = field(body, label, value); input.readOnly = true;
-    const row = el('div', 'plugin-setup-copy'); input.replaceWith(row); row.append(input, button(() => t("Copy"), async () => { if (await run(window.api.writeClipboard(value))) toast(t("{0} copied", [label])); }));
-  };
-  let tunnel: HTMLInputElement | null = null;
-  let key: HTMLInputElement | null = null;
-  if (config.tunnel.kind === 'openai') {
-    body.append(button(() => t("Open Tunnels"), async () => { await run(window.api.openLink('https://platform.openai.com/settings/organization/tunnels')); }));
-    tunnel = field(body, () => t("Plugins tunnel ID"), config.tunnel.pluginsTunnelId ?? '', false, () => t("Create a dedicated tunnel in the same workspace you use in ChatGPT."));
-    tunnel.id = 'pluginsTunnelId'; tunnel.spellcheck = false; tunnel.autocomplete = 'off';
-    if (hasApiKey) body.append(el('p', 'hint', () => t("Your stored tunnel API key is already available.")));
-    else key = field(body, () => t("Tunnel API key"), '', true, () => t("Use a restricted key with Tunnels: Read and Tunnels: Use. It is stored securely and shared with your other connectors."));
-  }
-  // Values needed for ChatGPT setup stay copyable; tool lists belong to each plugin.
-  copy(t("Connector name"), surface?.connectorName ?? 'Chat On Steroids Plugins');
-  copy(t("Description"), surface?.description ?? 'Tools from your enabled Chat On Steroids plugins.');
-  const url = surface?.publicUrl ?? (config.tunnel.kind === 'manual' ? surface?.localUrl : null);
-  if (url) copy(t("MCP server URL"), url);
-  body.append(el('p', 'hint', () => config.tunnel.kind === 'openai'
-    ? t("In ChatGPT, add this connector with Tunnel and select your Plugins tunnel. Refresh its tools after adding or changing plugins.")
-    : t("In ChatGPT, add this connector using its MCP server URL. Refresh its tools after adding or changing plugins.")));
-  const actions = el('div', 'plugin-setup-actions');
-  actions.append(button(() => t("Open ChatGPT plugins"), async () => { await run(window.api.openLink('https://chatgpt.com/#settings/Plugins')); }), button(() => t("Save & connect"), async () => {
-    if (!appState) return;
-    if (tunnel && !tunnel.value.trim()) { tunnel.focus(); throw new Error(t("Enter your Plugins tunnel ID.")); }
-    if (key?.value) { const next = await run(window.api.setApiKey(key.value)); if (!next) return; key.value = ''; applyAppState(next); applyPluginsState(next); }
-    if (tunnel) {
-      const { capabilities, readOnly, tunnel: previousTunnel, ui, sessions, compaction, multiAgent, goal, mcp } = appState.config;
-      const base: SettingsPatch = { capabilities, readOnly, tunnel: previousTunnel, ui, sessions, compaction, multiAgent, goal, mcp };
-      const next = await run(window.api.saveSettings({ ...base, tunnel: { ...previousTunnel, pluginsTunnelId: tunnel.value.trim() } }, base));
-      if (!next) return; applyAppState(next); applyPluginsState(next);
-    }
-    const next = await run(window.api.connect());
-    if (next) { applyAppState(next); applyPluginsState(next); toast(t("Plugin connection saved")); }
-  }, true)); body.append(actions);
-  applyPluginsState(appState);
 }
 function renderInstalled(): void {
   marketplace?.setInstalled(snapshot.plugins);
@@ -395,13 +347,12 @@ function showCustom(kind: PluginSource['kind'], path = ''): void {
     if (await mutate(window.api.pluginsInstall({ name: name.value, source, credentials: key.value.trim() && credential.value ? { [key.value.trim()]: credential.value } : {} }))) box.close();
   }, true));
 }
-export function initPlugins(onState: (next: AppState) => void = () => {}): void {
-  applyAppState = onState;
+export function initPlugins(openConnectionSettings: () => void = () => {}): void {
   marketplace=mountPluginMarketplace($('pluginMarketplace'),showRegistryEntry);
   $('pluginsAdd').before(button(()=>t('Online MCP marketplace'),openMarketplace));
   $('pluginsAdd').addEventListener('click', showCatalog); $('pluginsRefresh').addEventListener('click', () => void refreshPlugins());
   $('pluginsSearch').addEventListener('input', renderInstalled);
-  $('pluginsSetupLink').addEventListener('click', showConnection);
+  $('pluginsSetupLink').addEventListener('click', openConnectionSettings);
   $('pluginsOpenChatGPT').addEventListener('click', async () => { await run(window.api.openLink('https://chatgpt.com/#settings/Plugins')); });
   $('pluginsLegalOpen').addEventListener('click', async () => { await run(window.api.openLegalNotices()); });
   window.api.onPluginsChanged(() => { void refreshPlugins(); }); void refreshPlugins();

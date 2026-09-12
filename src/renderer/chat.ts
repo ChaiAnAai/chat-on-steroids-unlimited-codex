@@ -2456,29 +2456,6 @@ function stateLine(): { text: string; tone: '' | 'is-live' | 'is-bad'; working?:
 
 // ----------------------------------------------------------------- settings
 
-/**
- * Shows where the extension actually is on this machine.
- *
- * An installed build has no source tree, so "load extension/ from the repo" is advice
- * that cannot be followed. Asked once and cached, because the answer cannot change while
- * the app is running.
- */
-let extensionPathShown = false;
-async function showExtensionPath(): Promise<void> {
-  if (extensionPathShown) return;
-  extensionPathShown = true;
-  const dir = await run(api.extensionPath());
-  const node = $('extensionPath');
-  if (dir) {
-    ui(node, 'textContent', () => t("Extension folder: {0}", [dir]));
-    node.classList.remove('is-warn');
-  } else {
-    ui(node, 'textContent', () => t("The extension folder is missing from this installation. Reinstall the app, or use the extension/ folder from a source checkout."));
-    node.classList.add('is-warn');
-    $<HTMLButtonElement>('bridgeFolder').disabled = true;
-  }
-}
-
 function paintSwarm(state: SwarmState): void {
   swarm = state;
   paintStateLine();
@@ -2993,7 +2970,6 @@ export function chatApply(state: AppState, previous?: Config): void {
           ? t("Authorized, but the browser extension is not currently connected. {0}", [bridge.lastSeenAt === null ? t("It has not checked in since this app started.") : t("Last seen {0}.", [ago(bridge.lastSeenAt)])])
           : t("Listening on 127.0.0.1:{0} · no browser is authorized or connected yet.", [bridge.port ?? '?']));
   $('bridgeState').classList.toggle('is-warn', browserRequired && (!bridge.present || !secureStorageAvailable));
-  void showExtensionPath();
 
   if (sessions.length > 0) paintSessions();
 }
@@ -3799,10 +3775,7 @@ export function initChat(next: Deps): void {
     const state = await run(api.unpairExtension());
     if (state) toast('Browser disconnected');
   });
-  $('bridgeFolder').addEventListener('click', async () => {
-    const dir = await run(api.openExtensionFolder());
-    if (dir) toast('Extension folder opened');
-  });
+
 
   api.onSessionChanged(scheduleReload);
   api.onTaskProgress(progress => {

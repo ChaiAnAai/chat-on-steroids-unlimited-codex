@@ -7,6 +7,7 @@ import { paintPluginRefreshReminder } from './plugin-refresh-reminder.js';
 import { initUsage, refreshUsage } from './usage.js';
 import { initSidebarResize } from './sidebar-resize.js';
 import { initPlugins, applyPluginsState } from './plugins.js';
+import { initExtensionSetup } from './extension-setup.js';
 import { mountSkillsPanel } from './skills-panel.js';
 let skillsPanel: ReturnType<typeof mountSkillsPanel> | undefined;
 import { initBrowserPreferences } from './browser-preferences.js';
@@ -142,7 +143,7 @@ function showTab(name: string): void {
   $('workspaceSettings').classList.toggle('is-sel', settings && name !== 'plugins');
   $('workspacePlugins').classList.toggle('is-sel', name === 'plugins');
   if (name === 'usage') void refreshUsage();
-  $('tabs').hidden = !settings || name === 'plugins';
+  $('tabs').hidden = !settings;
   $('backToChat').hidden = true;
   document.querySelector<HTMLElement>('.sidebar-sessions')!.hidden = false;
   $('newChat').hidden = false;
@@ -475,7 +476,7 @@ function save(over: { readOnly?: boolean; theme?: ThemeMode; appearance?: Appear
       kind: $<HTMLSelectElement>('tunnelKind').value as 'openai' | 'cloudflared' | 'manual',
       tunnelId: $<HTMLInputElement>('tunnelId').value.trim(),
       desktopTunnelId: $<HTMLInputElement>('desktopTunnelId').value.trim(),
-      pluginsTunnelId: previous.tunnel.pluginsTunnelId ?? '',
+      pluginsTunnelId: $<HTMLInputElement>('pluginsTunnelId').value.trim(),
       binaryPath: $<HTMLInputElement>('binaryPath').value.trim()
     },
     ui: {
@@ -1023,6 +1024,7 @@ function apply(next: AppState): void {
     previousState?.config.tunnel.desktopTunnelId
   );
   applyValue($<HTMLInputElement>('binaryPath'), config.tunnel.binaryPath, previousState?.config.tunnel.binaryPath);
+  applyValue($<HTMLInputElement>('pluginsTunnelId'), config.tunnel.pluginsTunnelId ?? '', previousState?.config.tunnel.pluginsTunnelId ?? '');
   applyValue($<HTMLSelectElement>('chatBrowser'), config.ui.chatBrowser ?? 'chrome', previousState?.config.ui.chatBrowser ?? 'chrome');
   $<HTMLSelectElement>('planBackend').value = config.ui.planBackend ?? 'chatgpt';
   applyChecked($<HTMLInputElement>('finishTool'), config.ui.finishTool === true, previousState?.config.ui.finishTool);
@@ -1056,6 +1058,7 @@ function apply(next: AppState): void {
   }
 
   const openai = config.tunnel.kind === 'openai';
+  document.querySelectorAll<HTMLElement>('[data-connection-step="tunnel"], [data-connection-step="key"]').forEach(button => { button.hidden = !openai; });
   const browserRequired = browserExtensionRequired(config);
   step('tunnel').hidden = !openai;
   step('key').hidden = !openai;
@@ -1221,7 +1224,7 @@ function copyRow(label: string | (() => string), value: string, what: string): H
 function connectorCards(next: AppState): HTMLElement[] {
   const { status, config } = next;
   return status.surfaces
-    .filter((surface) => surface.id !== 'plugins' && (surface.id !== 'desktop' || (next.platform?.desktopAutomation ?? true)))
+    .filter((surface) => surface.id !== 'desktop' || (next.platform?.desktopAutomation ?? true))
     .map((surface) => {
     const card = el('div', `connector is-${surface.state}`);
 
@@ -1765,7 +1768,8 @@ for (const id of [
   'privacyScreenshots',
   'tunnelKind',
   'tunnelId',
-  'desktopTunnelId'
+  'desktopTunnelId',
+  'pluginsTunnelId'
 ]) {
   $(id).addEventListener('change', () => void save());
   $(id).addEventListener('blur', event => settingsDrafts.delete(event.currentTarget as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement));
@@ -1823,12 +1827,22 @@ profile.append(el('span', 'profile-avatar', '知'), el('span', '', () => t('Loca
 ui(profile, 'title', () => currentLanguage() === 'zh-CN' ? '账号管理' : 'Account management');
 ui(profile, 'aria-label', () => currentLanguage() === 'zh-CN' ? '账号管理' : 'Account management');
 profile.onclick = () => accountsPanel.open();
+$('connectionAccounts').addEventListener('click', () => accountsPanel.open());
 document.querySelector('.sidebar-bottom')!.prepend(profile);
 ui(document.querySelector('.sidebar-brand strong')!, 'textContent', () => currentLanguage() === 'zh-CN' ? '知行' : 'Chat On Steroids');
 ui(document.querySelector('title')!, 'textContent', () => currentLanguage() === 'zh-CN' ? '知行 · Chat On Steroids' : 'Chat On Steroids');
 initSidebarResize();
 initUsage();
-initPlugins(apply);
+initPlugins(() => {
+  if (state?.config.tunnel.kind === 'openai') {
+    revealConnectionStep('tunnel');
+    $('pluginsTunnelId').focus();
+  } else revealConnectionStep('chatgpt');
+});
+initExtensionSetup();
+document.querySelectorAll<HTMLElement>('[data-connection-step]').forEach(button => {
+  button.addEventListener('click', () => revealConnectionStep(button.dataset.connectionStep!));
+});
 skillsPanel = mountSkillsPanel($('skillsPanel'), () => showTab('chat'));
 initBrowserPreferences();
 initChat({ save: () => save(), state: () => state });

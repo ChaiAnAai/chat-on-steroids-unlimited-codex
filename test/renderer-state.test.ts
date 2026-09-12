@@ -948,16 +948,38 @@ it('shows a missing-extension reminder while connected and clears it after the c
   expect(doc.getElementById('updateNotice')!.hidden).toBe(true);
 });
 
-it('keeps plugin connection controls out of general Setup and preserves its tunnel during unrelated saves', async () => {
+it('includes Plugins in unified connection settings and preserves its tunnel during unrelated saves', async () => {
   const mounted = await mountChat(); const doc = mounted.window.document;
   const next = structuredClone(mounted.state); next.config.tunnel.pluginsTunnelId = 'tunnel_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   mounted.push(next);
-  expect(doc.querySelector('[data-panel="setup"] #pluginsTunnelId')).toBeNull();
+  expect(doc.querySelector('[data-panel="setup"] #pluginsTunnelId')).not.toBeNull();
   const input = doc.getElementById('tunnelId') as HTMLInputElement;
   input.value = 'tunnel_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   input.dispatchEvent(new mounted.window.Event('change')); await settle();
   expect(mounted.calls.at(-1).tunnel.pluginsTunnelId).toBe(next.config.tunnel.pluginsTunnelId);
   expect(doc.querySelector('[data-panel="setup"] [data-link="https://chatgpt.com/#settings/Plugins"]')).not.toBeNull();
+});
+
+it('opens the sole Plugins form from the plugin page and preserves a tunnel draft across status pushes', async () => {
+  const mounted = await mountChat(); const doc = mounted.window.document;
+  doc.querySelector<HTMLButtonElement>('[data-tab="plugins"]')!.click();
+  expect(doc.getElementById('tabs')!.hidden).toBe(false);
+  doc.getElementById('pluginsSetupLink')!.click();
+  const input = doc.getElementById('pluginsTunnelId') as HTMLInputElement;
+  expect(doc.activeElement).toBe(input);
+  expect((doc.getElementById('connectionDetails') as HTMLDetailsElement).open).toBe(true);
+  expect(doc.getElementById('pluginDialog')).toBeNull();
+  input.value = 'tunnel_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  input.dispatchEvent(new mounted.window.Event('input', { bubbles: true }));
+  mounted.push(structuredClone(mounted.state));
+  expect(input.value).toBe('tunnel_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+  input.dispatchEvent(new mounted.window.Event('change')); await settle();
+  expect(mounted.calls.at(-1).tunnel.pluginsTunnelId).toBe(input.value);
+  const manual = structuredClone(mounted.state); manual.config.tunnel.kind = 'manual';
+  mounted.push(manual);
+  doc.getElementById('pluginsSetupLink')!.click();
+  expect(doc.activeElement).toBe(doc.querySelector('[data-step="chatgpt"]'));
+  expect(doc.querySelector<HTMLElement>('[data-connection-step="tunnel"]')!.hidden).toBe(true);
 });
 
 /**

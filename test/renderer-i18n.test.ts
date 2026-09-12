@@ -20,10 +20,10 @@ describe('Chinese app interface', () => {
     const select = document.getElementById('uiLanguage') as HTMLSelectElement;
     expect(document.querySelector('[data-panel="setup"] .language-tabs')).toBeNull();
     expect(select.value).toBe('zh-CN');
-    expect(document.querySelector('.setup-heading h1')!.textContent).toBe('连接设置');
+    expect(document.querySelector('.setup-heading h1')!.textContent).toBe('连接与扩展');
     expect(document.querySelector('#connectionDetails > summary')!.textContent).toBe('连接配置详情');
     select.value = 'en'; select.dispatchEvent(new dom.window.Event('change'));
-    expect(document.querySelector('.setup-heading h1')!.textContent).toBe('Setup');
+    expect(document.querySelector('.setup-heading h1')!.textContent).toBe('Connections & extensions');
     expect(document.querySelector('#connectionDetails > summary')!.textContent).toBe('Connection details');
     // The main process owns persistence; this renderer-only test keeps the legacy value.
     expect(window.localStorage.getItem('cos.ui.language')).toBe('zh-CN');
