@@ -537,7 +537,7 @@
                       id="bridgeDownload"
                       type="button"
                     >
-                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg>Download extension ZIP
+                      <svg class="ico" viewBox="0 0 24 24"><use href="#i-out" /></svg>Save bundled extension ZIP
                     </button>
                     <button class="btn" id="bridgeUnpair" type="button">Disconnect browser</button>
                     <span class="chosen" id="bridgeState"></span>
@@ -675,7 +675,8 @@
                 <div class="pane">
                   <label class="setting"><span class="setting-text"><b>ChatGPT browser</b><em>Used when the app launches a browser. Install the companion and sign in to ChatGPT in this browser's active profile. Already connected tabs stay in their browser.</em></span><select id="chatBrowser"><option value="chrome">Google Chrome / Chromium</option><option value="edge">Microsoft Edge</option><option value="brave">Brave Browser</option></select></label>
                   <label class="setting"><span class="setting-text"><b>Background chats</b><em>Keep app-created ChatGPT tabs in the background.</em></span><input id="backgroundChats" type="checkbox" /></label>
-                  <label class="setting"><span class="setting-text"><b>Automatic plugin refresh</b><em>Let the companion refresh changed connector tools in ChatGPT. Off by default; manual refresh remains available in ChatGPT.</em></span><input id="autoRefreshPlugins" type="checkbox" /></label>
+                  <label class="setting"><span class="setting-text"><b>Automatic plugin refresh</b><em>Automatic refresh currently supports legacy browser pairing only. Account-paired profiles require manual refresh in ChatGPT; enabling this setting does not refresh those accounts.</em></span><input id="autoRefreshPlugins" type="checkbox" /></label>
+                  <p class="muted">For account connections, open the account's browser profile, then ChatGPT Settings and Apps. Refresh tool actions there if available; workspace permissions may require an administrator or republishing the app. Opening settings is not refresh confirmation.</p>
                   <label class="setting"><span class="setting-text"><b>Browser only</b><em>Do not open tabs for automatic plugin refresh or chat recovery. Explicit new chats, workers and Reload models still work.</em></span><input id="browserOnly" type="checkbox" /></label>
                   <p class="muted">Idle app-created tabs close after two minutes. Sleeping worker tabs can close earlier when the worker limit is exceeded. Active turns and unsent drafts stay open.</p>
                   <label class="setting"><span class="setting-text"><b>Overwrite ChatGPT tool rows</b><em>Show recorded local activity in the ChatGPT page.</em></span><input id="browserOverwrite" type="checkbox" disabled /></label>

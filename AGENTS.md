@@ -1573,6 +1573,10 @@ a bundler. `electron-builder.yml` puts executable tunnel/rg, extension and requi
 payloads outside asar. `extension-path.ts` transactionally mirrors the packaged extension to
 stable `userData/extension`, never an ephemeral AppImage mount.
 
+`extension-export.ts` exports that companion plus the app license through the fixed
+`bridge:downloadExtension` save operation. Cancellation is not success; missing or invalid
+bundles fail visibly. Never infer a downloadable release asset from a preview version string.
+
 | Build owner | Contract |
 | --- | --- |
 | `scripts/package.mjs` | Icons → bundle → explicit target resources/native staging → builder with publishing disabled. |

@@ -35,7 +35,7 @@ describe('companion extension setup contract', () => {
       readFile(path.join(repo, 'src/main/ipc.ts'), 'utf8')
     ]);
 
-    expect(html).toMatch(/id="bridgeDownload"[\s\S]*?Download extension ZIP/i);
+    expect(html).toMatch(/id="bridgeDownload"[\s\S]*?Save bundled extension ZIP/i);
     expect(html).toMatch(/Required for sub-agents/i);
     expect(html).toMatch(/Requires the Chrome extension to be loaded and connected/i);
     expect(html).not.toContain('/releases/latest/');

@@ -59,16 +59,18 @@ it('distinguishes a serving connector from evidence of ChatGPT contact', () => {
   expect(document.getElementById('pluginsSetup')).toBeNull();
   expect(document.querySelector('[data-panel="setup"] #pluginsTunnelId')).toBeNull();
   expect(document.querySelector('.plugin-connection')!.classList.contains('is-configured')).toBe(true);
-  expect(document.getElementById('pluginsSetupLink')!.textContent).toBe('Plugin setup');
+  expect(document.getElementById('pluginsSetupLink')!.textContent).toBe('Configure Plugins connection');
 });
 
 it('keeps saved plugin setup compact after restart even while its connector is offline', () => {
   applyPluginsState({ config: { tunnel: { kind: 'openai', pluginsTunnelId: 'saved-plugins' } }, status: { surfaces: [] } } as unknown as AppState);
   expect(document.querySelector('.plugin-connection')!.classList.contains('is-configured')).toBe(true);
   expect(document.getElementById('pluginsConnectionStatus')!.textContent).toBe('Plugins connector offline');
-  expect(document.getElementById('pluginsSetupLink')!.textContent).toBe('Plugin setup');
+  expect(document.getElementById('pluginsSetupLink')!.textContent).toBe('Configure Plugins connection');
   applyPluginsState({ config: { tunnel: { kind: 'openai', pluginsTunnelId: '' } }, status: { surfaces: [] } } as unknown as AppState);
   expect(document.querySelector('.plugin-connection')!.classList.contains('is-configured')).toBe(false);
+  expect(document.getElementById('pluginsSetupHint')!.textContent).toContain('The Plugins tunnel ID is missing');
+  expect(document.getElementById('pluginsSetupHint')!.textContent).toContain('Core and Desktop connections do not publish external plugins');
 });
 
 it('keeps first-use setup and the connector-refresh instruction visible, including after connection', async () => {

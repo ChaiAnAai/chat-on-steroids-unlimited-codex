@@ -35,7 +35,8 @@ import { registerPluginIpc } from './plugins-ipc.js';
  */
 
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
 import {
   CAPABILITIES,
@@ -78,7 +79,7 @@ import {
   unpair
 } from './bridge.js';
 import { extensionDir } from './extension-path.js';
-import { extensionDownloadUrl } from './version.js';
+import { extensionArchive } from './extension-export.js';
 import {
   deleteSession,
   getSession,
@@ -995,9 +996,15 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
   });
 
   handle('bridge:downloadExtension', async () => {
-    // This is a recovery path for the extension bundled with *this installed app*. Never use
-    // releases/latest here: an old app must not fetch a newer extension with a newer protocol.
-    await shell.openExternal(extensionDownloadUrl(app.getVersion()));
+    const dir = extensionDir();
+    if (!dir) throw new Error('The bundled extension is missing. Reinstall this app version to restore it.');
+    const bytes = await extensionArchive(dir, await readFile(path.join(app.getAppPath(), 'LICENSE')));
+    const chosen = await dialog.showSaveDialog({
+      defaultPath: 'Chat-On-Steroids-Extension.zip',
+      filters: [{ name: 'ZIP', extensions: ['zip'] }]
+    });
+    if (chosen.canceled || !chosen.filePath) return false;
+    await writeFile(chosen.filePath, bytes);
     return true;
   });
 

@@ -1776,7 +1776,15 @@ document.addEventListener('click', (event) => {
   if (link?.dataset.link) void run(api.openLink(link.dataset.link));
 });
 
-$('bridgeDownload').addEventListener('click', () => void run(api.downloadExtension()));
+$('bridgeDownload').addEventListener('click', async () => {
+  const button = $<HTMLButtonElement>('bridgeDownload');
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    const saved = await run(api.downloadExtension());
+    if (saved) toast(t('Extension ZIP saved. Extract it, then load that folder in the browser extension manager.'));
+  } finally { button.disabled = false; }
+});
 $('updateExtension').addEventListener('click', () => {
   revealConnectionStep('browser');
 });

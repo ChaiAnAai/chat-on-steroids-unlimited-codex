@@ -71,12 +71,14 @@ export function applyPluginsState(next: AppState): void {
   const status = $('pluginsConnectionStatus');
   const contacted = surface?.state === 'live' && !!surface.lastRequestAt;
   const configured = !!next.config.tunnel.pluginsTunnelId?.trim() || surface?.state === 'live';
+  const missingTunnel = next.config.tunnel.kind === 'openai' && !next.config.tunnel.pluginsTunnelId?.trim();
   $('pluginsSetupTitle').closest('.plugin-connection')!.classList.toggle('is-configured', configured);
   ui($('pluginsSetupTitle'), 'textContent', () => configured ? t("Your Plugins connector") : t("Set up plugins before your first use"));
   ui($('pluginsSetupHint'), 'textContent', () => configured
     ? t("Your enabled plugins share one connector in ChatGPT. Manage its connection here.")
-    : t("Add the Chat On Steroids Plugins connector in ChatGPT once so it can use your installed plugins."));
-  ui($('pluginsSetupLink'), 'textContent', () => configured ? t("Plugin setup") : t("Set up plugins"));
+    : missingTunnel ? t("The Plugins tunnel ID is missing. Core and Desktop connections do not publish external plugins. Save your existing Plugins tunnel here before refreshing in ChatGPT.")
+      : t("Add the Chat On Steroids Plugins connector in ChatGPT once so it can use your installed plugins."));
+  ui($('pluginsSetupLink'), 'textContent', () => t("Configure Plugins connection"));
   $('pluginsSetupLink').classList.toggle('btn-solid', !configured);
   ui(status, 'textContent', () => surface?.state === 'live'
     ? contacted ? t("Connected to ChatGPT") : t("Connector online · waiting for ChatGPT")
@@ -86,7 +88,8 @@ export function applyPluginsState(next: AppState): void {
   const setupStatus = document.getElementById('pluginSetupStatus');
   if (setupStatus) ui(setupStatus, 'textContent', () => surface?.state === 'live'
     ? t("{0} tools available · {1}", [surface.tools.length, surface.lastRequestAt ? t("Connected to ChatGPT") : t("Ready to add in ChatGPT")])
-    : surface?.state === 'error' ? surface.detail : t("Save your connection below to make enabled plugins available in ChatGPT."));
+    : missingTunnel ? t("The Plugins tunnel ID is missing. Core and Desktop connections do not publish external plugins. Save your existing Plugins tunnel here before refreshing in ChatGPT.")
+      : surface?.state === 'error' ? surface.detail : t("Save your connection below to make enabled plugins available in ChatGPT."));
 }
 function showConnection(): void {
   if (!appState) { toast(t("Connection settings are still loading.")); return; }

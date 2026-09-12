@@ -1225,5 +1225,11 @@
   "Translate original in browser": "在浏览器中翻译完整原文",
   "Could not open translation. Try again.": "未能打开翻译页面，请重试。",
   "Could not save recently viewed MCPs. Try again.": "未能保存最近查看记录，请重试。",
-  "Could not load saved MCP collections. Try again.": "未能读取收藏和最近查看记录，请重试。"
+  "Could not load saved MCP collections. Try again.": "未能读取收藏和最近查看记录，请重试。",
+  "Save bundled extension ZIP": "保存内置扩展 ZIP",
+  "Extension ZIP saved. Extract it, then load that folder in the browser extension manager.": "扩展 ZIP 已保存。解压后，请在浏览器扩展管理页加载该文件夹。",
+  "Automatic refresh currently supports legacy browser pairing only. Account-paired profiles require manual refresh in ChatGPT; enabling this setting does not refresh those accounts.": "自动刷新目前仅支持旧式浏览器配对。通过账号管理配对的浏览器仍需在 ChatGPT 中手动刷新；开启此项不会刷新这些账号。",
+  "For account connections, open the account's browser profile, then ChatGPT Settings and Apps. Refresh tool actions there if available; workspace permissions may require an administrator or republishing the app. Opening settings is not refresh confirmation.": "账号连接请先打开该账号的浏览器个人资料，再进入 ChatGPT 设置中的应用／插件，使用可用的刷新操作。工作区可能要求管理员处理或重新发布应用；打开设置不代表刷新成功。",
+  "The Plugins tunnel ID is missing. Core and Desktop connections do not publish external plugins. Save your existing Plugins tunnel here before refreshing in ChatGPT.": "尚未填写 Plugins 隧道 ID。Core 和 Desktop 连接不会发布外部 MCP 插件。请先在这里保存已有的 Plugins 隧道，再到 ChatGPT 刷新。",
+  "Configure Plugins connection": "配置 Plugins 连接"
 }

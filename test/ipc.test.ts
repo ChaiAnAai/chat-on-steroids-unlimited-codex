@@ -19,7 +19,7 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: class {},
   clipboard: { readText: () => '', writeText: () => undefined },
-  dialog: { showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] as string[] })) },
+  dialog: { showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] as string[] })), showSaveDialog: vi.fn(async () => ({ canceled: true, filePath: undefined as string | undefined })) },
   shell: { openExternal: vi.fn(async () => undefined), openPath: vi.fn(async () => '') },
   nativeTheme: { themeSource: 'system' },
   safeStorage: {
@@ -32,7 +32,7 @@ vi.mock('electron', () => ({
 }));
 
 // This suite owns IPC behavior, not Electron's packaged-vs-checkout path discovery.
-vi.mock('../src/main/extension-path.js', () => ({ extensionDir: () => process.cwd() }));
+vi.mock('../src/main/extension-path.js', () => ({ extensionDir: () => process.cwd() + '/extension' }));
 vi.mock('../src/main/browser.js', () => ({ openInPreferredBrowser: vi.fn(async () => 'chrome.exe') }));
 
 const { defaultConfig, getConfig, initConfigPath, saveConfig } = await import('../src/main/config.js');
@@ -64,7 +64,6 @@ const {
 const { registerIpc } = await import('../src/main/ipc.js');
 const { openInPreferredBrowser } = await import('../src/main/browser.js');
 const { app, nativeTheme, safeStorage, shell, dialog } = await import('electron');
-const { extensionDownloadUrl } = await import('../src/main/version.js');
 const { resetWorkspaces, setWorkspaceFor, workspaceEntries } = await import('../src/main/workspace.js');
 const { makeTempDir, removeTempDir } = await import('./helpers.js');
 
@@ -493,13 +492,28 @@ describe('bounded IPC identities and OS launch results', () => {
     expect(reply.error).toMatch(/could not open.*access is denied/i);
   });
 
-  it('opens the extension recovery ZIP from the installed app version, never releases/latest', async () => {
-    vi.mocked(app.getVersion).mockReturnValueOnce('1.8.8');
+  it('exports the bundled companion without requesting an unpublished preview release', async () => {
+    const destination = path.join(dir, 'extension-export.zip');
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: destination });
     const reply = await handlers.get('bridge:downloadExtension')!(null, undefined);
-
     expect(reply).toEqual({ ok: true, data: true });
-    expect(shell.openExternal).toHaveBeenCalledWith(extensionDownloadUrl('1.8.8'));
-    expect(vi.mocked(shell.openExternal).mock.calls[0]?.[0]).not.toContain('/releases/latest/');
+    const { unzipSync } = await import('fflate');
+    const entries = unzipSync(await fs.readFile(destination));
+    expect(Buffer.from(entries['manifest.json']!)).toEqual(await fs.readFile('extension/manifest.json'));
+    expect(entries['background.js']).toBeDefined();
+    expect(Buffer.from(entries.LICENSE!)).toEqual(await fs.readFile('LICENSE'));
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('does not claim a saved extension when the picker is cancelled', async () => {
+    expect(await handlers.get('bridge:downloadExtension')!(null, undefined)).toEqual({ ok: true, data: false });
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed extension write rather than opening a download URL', async () => {
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: path.join(dir, 'absent-directory', 'extension.zip') });
+    expect(await handlers.get('bridge:downloadExtension')!(null, undefined)).toMatchObject({ ok: false });
+    expect(shell.openExternal).not.toHaveBeenCalled();
   });
 
   it('bounds and validates an agent id before it reaches the global broker', async () => {
