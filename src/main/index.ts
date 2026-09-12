@@ -92,7 +92,7 @@ let stopSessionRetention: (() => void) | null = null;
 const uiPreview = process.argv.includes('--ui-preview') || app.getVersion().includes('-accounts-preview.');
 if (uiPreview) {
   app.setPath('userData', path.join(app.getPath('appData'), 'Chat On Steroids UI Preview'));
-  process.env.CLF_BRIDGE_PORTS = '0';
+  process.env.CLF_BRIDGE_PORTS ??= '18765,18766,18767,18768,18769';
 }
 // One instance only: two copies would fight over the tunnel and the config file.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();

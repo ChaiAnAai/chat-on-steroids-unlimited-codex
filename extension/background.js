@@ -21,6 +21,7 @@
  */
 
 const PORTS = [8765, 8766, 8767, 8768, 8769];
+const SETUP_PORTS = [...PORTS, 18765, 18766, 18767, 18768, 18769];
 const HELLO_TIMEOUT_MS = 1200;
 const REQUEST_TIMEOUT_MS = 10_000;
 /**
@@ -1272,7 +1273,7 @@ async function accountPairEndpoint(configuration) {
   }
   return discover(true);
 }
-async function requestAccountPair(configuration) {
+async function requestAccountPair(configuration, setupId) {
   await load();
   const parsed = parseAccountConfig(configuration ?? accountConfig);
   if (!parsed) return accountPairFailure('invalid_account_configuration');
@@ -1286,7 +1287,7 @@ async function requestAccountPair(configuration) {
     if (intent !== connectionEpoch) return accountPairFailure('pairing_stale');
     if (!found) return accountPairFailure('app_not_found');
     if (found.compatible === false) return accountPairFailure('incompatible_extension');
-    const response = await fetchBounded(`http://127.0.0.1:${found.port}/accounts/pair`, { method: 'POST', cache: 'no-store', redirect: 'error', headers: { 'content-type': 'application/json', ...versionHeaders() }, body: JSON.stringify({ action: 'request', ...parsed }) });
+    const response = await fetchBounded(`http://127.0.0.1:${found.port}/accounts/pair`, { method: 'POST', cache: 'no-store', redirect: 'error', headers: { 'content-type': 'application/json', ...versionHeaders() }, body: JSON.stringify({ action: 'request', ...parsed, ...(setupId ? { setupId } : {}) }) });
     const data = await response.json().catch(() => ({}));
     if (intent !== connectionEpoch) return accountPairFailure('pairing_stale');
     if (!response.ok || typeof data.nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(data.nonce) || typeof data.requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(data.requestId) || !Number.isFinite(data.expiresAt) || data.expiresAt <= Date.now() || data.expiresAt > Date.now() + 180000) return accountPairFailure('pairing_pending_or_invalid');
@@ -1295,6 +1296,37 @@ async function requestAccountPair(configuration) {
     pairingError = null; await persistAccountPair(); await persist();
     return intent === connectionEpoch ? accountPairView() : accountPairFailure('pairing_stale');
   } catch { return accountPairFailure('pairing_failed'); }
+}
+// Only an invitation explicitly opened in the desktop app is discoverable.
+async function discoverAccountSetups() {
+  await load();
+  const ports = [...new Set([...SETUP_PORTS, ...(accountConfig?.port ? [accountConfig.port] : [])])];
+  const candidates = await Promise.all(ports.map(async candidate => {
+    try {
+      const response = await fetchBounded(`http://127.0.0.1:${candidate}/accounts/setup`, { cache: 'no-store', redirect: 'error', headers: versionHeaders() }, HELLO_TIMEOUT_MS);
+      if (!response.ok) return null;
+      const data = await response.json(), invite = data.setup;
+      const configuration = parseAccountConfig(invite && { accountId: invite.accountId, browser: invite.browser, profileRef: invite.profileRef, port: candidate });
+      if (data.app !== 'chat-on-steroids' || !configuration || typeof invite.setupId !== 'string' || !/^[a-f0-9-]{36}$/i.test(invite.setupId) || typeof invite.displayName !== 'string' || invite.displayName.length > 160 || !Number.isFinite(invite.expiresAt) || invite.expiresAt <= Date.now() || invite.expiresAt > Date.now() + 180000) return null;
+      if (accountId && accountId !== configuration.accountId) return null;
+      return { configuration, setupId: invite.setupId, displayName: invite.displayName, expiresAt: invite.expiresAt };
+    } catch { return null; }
+  }));
+  return { ok: true, candidates: candidates.filter(Boolean) };
+}
+async function progressAccountPair() {
+  await load();
+  if (!accountPairPending || accountPairPending.expiresAt <= Date.now()) return accountPairView();
+  if (accountPairClaim) return accountPairClaim;
+  const pendingPair = accountPairPending, intent = connectionEpoch;
+  try {
+    const response = await fetchBounded(`http://127.0.0.1:${pendingPair.port}/accounts/pair`, { method: 'POST', cache: 'no-store', redirect: 'error', headers: { 'content-type': 'application/json', ...versionHeaders() }, body: JSON.stringify({ action: 'status', accountId: pendingPair.accountId, nonce: pendingPair.nonce }) });
+    const data = await response.json();
+    if (intent !== connectionEpoch || pendingPair !== accountPairPending) return accountPairView();
+    if (response.ok && data.confirmed === true && data.requestId === pendingPair.requestId) return finishAccountPair();
+    if (!response.ok) return accountPairFailure('pairing_expired');
+    return accountPairView();
+  } catch { return accountPairFailure('app_not_found'); }
 }
 async function finishAccountPair(recheck = false) {
   await load();
@@ -2773,7 +2805,13 @@ function serializeTab(tab, operation) {
 }
 
 const HANDLERS = {
-  async account_pair_status() { await load(); return accountPairView(); },
+  async account_pair_status() { return progressAccountPair(); },
+  async account_pair_discover() { return discoverAccountSetups(); },
+  async account_pair_connect(message) {
+    const found = await discoverAccountSetups();
+    const selected = found.candidates.find(row => row.setupId === message.setupId && row.configuration.port === message.port);
+    return selected ? requestAccountPair(selected.configuration, selected.setupId) : accountPairFailure('pairing_expired');
+  },
   async account_pair_request(message) { return requestAccountPair(message.configuration); },
   async account_pair_claim() { return finishAccountPair(); },
   async account_pair_recheck() { return finishAccountPair(true); },

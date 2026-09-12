@@ -31,26 +31,27 @@ function paintAccountPair(state) {
   if (!accountConfigLoaded && state.configuration && !$('accountConfiguration').value) $('accountConfiguration').value = JSON.stringify(state.configuration);
   accountConfigLoaded = true;
   const seconds = state.expiresAt ? Math.max(0, Math.ceil((state.expiresAt - Date.now()) / 1000)) : 0;
-  $('accountRequestBtn').disabled = accountPairBusy;
+  $('accountFindBtn').disabled = accountPairBusy || state.pending;
+  $('accountRequestBtn').disabled = accountPairBusy || state.pending;
   $('accountClaimBtn').disabled = accountPairBusy || !state.pending || seconds === 0;
   $('accountRecheckBtn').disabled = accountPairBusy || !state.configuration;
   $('accountPairStatus').textContent = accountPairError || (state.pending && seconds > 0
-    ? `请求 ${String(state.requestId || '').slice(0, 8)} 已提交，请核对知行中的请求编号，确认后点“完成配对”。剩余 ${seconds} 秒 · Match the request ID in 知行.`
-    : state.paired ? '配对已保存；登录身份待验证，自动执行与旧回执仍暂停。 · Identity verification pending.'
-      : seconds === 0 && state.expiresAt ? '配对已过期，请重新请求。 · Pairing expired.' : '复制配置并请求配对。登录身份未确认，任务不会自动启动。');
+    ? tr(`Request ${String(state.requestId || '').slice(0, 8)} — confirm the matching code in the app. ${seconds}s remaining. Reopen this popup afterwards; pairing finishes automatically.`, `请求 ${String(state.requestId || '').slice(0, 8)}：请在知行核对编号并确认。剩余 ${seconds} 秒，之后重新打开此弹窗即可自动完成。`)
+    : state.paired ? tr('Pairing saved. Login identity still needs verification; tasks remain paused.', '配对已保存；登录身份待验证，任务仍暂停。')
+      : seconds === 0 && state.expiresAt ? tr('Pairing expired. Find the app and try again.', '配对已过期，请重新查找知行并连接。') : tr('Waiting for a connection invitation. Pairing does not start tasks.', '等待连接邀请。配对不会自动启动任务。'));
 }
-async function accountPairAction(type) {
+async function accountPairAction(type, extra = {}) {
   if (accountPairBusy) return;
   const epoch = ++accountUiEpoch; accountPairBusy = true; accountPairError = '';
   for (const id of ['accountRequestBtn', 'accountClaimBtn', 'accountRecheckBtn']) $(id).disabled = true;
-  $('accountPairStatus').textContent = '正在处理… · Working…';
+  $('accountPairStatus').textContent = tr('Working…', '正在处理…');
   try {
     const value = $('accountConfiguration').value.trim();
-    const result = await chrome.runtime.sendMessage({ type, ...(type === 'account_pair_request' && value ? { configuration: value } : {}) });
+    const result = await chrome.runtime.sendMessage({ type, ...extra, ...(type === 'account_pair_request' && value ? { configuration: value } : {}) });
     if (epoch !== accountUiEpoch) return;
-    if (!result?.ok) { accountPairError = result?.message || '操作失败，配置已保留，请重试。 · Request failed; configuration retained.'; }
+    if (!result?.ok) { accountPairError = pairErrorText(result); }
     else accountPairState = result;
-  } catch { if (epoch === accountUiEpoch) accountPairError = '扩展后台未响应，请重试或重新加载。 · Companion unavailable.'; }
+  } catch { if (epoch === accountUiEpoch) accountPairError = tr('Extension background unavailable. Retry or reload the extension.', '扩展后台未响应，请重试或重新加载扩展。'); }
   finally {
     if (epoch === accountUiEpoch) {
       accountPairBusy = false;
@@ -59,8 +60,40 @@ async function accountPairAction(type) {
   }
 }
 $('accountRequestBtn').addEventListener('click', () => void accountPairAction('account_pair_request'));
-$('accountClaimBtn').addEventListener('click', () => void accountPairAction('account_pair_claim'));
+$('accountClaimBtn').addEventListener('click', () => void accountPairAction('account_pair_status'));
 $('accountRecheckBtn').addEventListener('click', () => void accountPairAction('account_pair_recheck'));
+
+$('accountFindBtn').addEventListener('click', async () => {
+  if (accountPairBusy) return;
+  const epoch = ++accountUiEpoch; accountPairBusy = true; $('accountFindBtn').disabled = true;
+  const box = $('accountCandidates'); box.replaceChildren();
+  $('accountPairStatus').textContent = tr('Finding the app…', '正在查找知行…');
+  try {
+    const found = await chrome.runtime.sendMessage({ type: 'account_pair_discover' });
+    if (epoch !== accountUiEpoch) return;
+    for (const row of found?.candidates || []) {
+      const button = document.createElement('button'); button.type = 'button';
+      button.textContent = `${row.displayName} · ${row.configuration.browser} · ${row.configuration.port >= 18765 && row.configuration.port <= 18769 ? tr('Preview', '测试版') : tr('App', '应用')}`;
+      button.onclick = () => { box.replaceChildren(); void accountPairAction('account_pair_connect', { setupId: row.setupId, port: row.configuration.port }); };
+      box.append(button);
+    }
+    accountPairError = box.children.length ? tr('Select the account you just prepared in the app.', '请选择刚在知行中准备连接的账号。') : tr('No invitation found. In the latest app, open Accounts and click Connect extension, then try again within two minutes.', '未找到连接邀请。请在最新版知行的账号管理中点“连接扩展”，两分钟内再试。'); $('accountPairStatus').textContent = accountPairError;
+  } catch { $('accountPairStatus').textContent = tr('Could not find the app. Keep it open and try again.', '查找失败，请保持知行运行后重试。'); }
+  finally { if (epoch === accountUiEpoch) { accountPairBusy = false; $('accountFindBtn').disabled = false; } }
+});
+function pairErrorText(result) {
+  const errors = {
+    invalid_account_configuration: ['Invalid manual configuration. Copy it from the app’s advanced connection details.', '手动配置格式不正确，请从知行的高级连接信息中复制。'],
+    account_profile_already_bound: ['This profile belongs to another account. Use the matching browser profile.', '此个人资料已绑定其他账号，请打开对应的浏览器个人资料。'],
+    app_not_found: ['App unavailable. Keep the selected app open and retry.', '无法连接知行，请保持对应的程序运行后重试。'],
+    incompatible_extension: ['Versions do not match. Reload the companion shipped with this app.', '版本不匹配，请加载当前知行附带的扩展。'],
+    pairing_pending_or_invalid: ['Confirm the matching request in the app; an expired request needs a new invitation.', '请在知行中确认对应请求；请求过期后需要重新发起连接邀请。'],
+    pairing_expired: ['Pairing expired. Prepare a new invitation in the app.', '配对已过期，请在知行中重新点击“连接扩展”。'],
+    pairing_stale: ['The connection changed. Check the selected account and retry.', '连接已变更，请检查所选账号后重试。'],
+    account_recheck_required: ['Reconnect the saved account in the app, then check again here.', '请先在知行中重连该账号，再检查已保存连接。']
+  };
+  return tr(...(errors[result?.error] || ['Connection failed. Configuration is retained; check the app and retry.', '连接失败，配置已保留，请检查知行后重试。']));
+}
 
 // ------------------------------------------------------------------ formatting
 
@@ -101,14 +134,14 @@ function stage(name, state, meta) {
 // -------------------------------------------------------------------- pipeline
 
 /** How the app describes what it placed a call on, in its own words. */
-const ATTRIBUTION = {
-  request_id: 'exact request id',
-  unattributed: 'request id not resolved',
-  agent: 'agent key',
-  turn: 'tool block on the page',
-  generation: 'the only chat generating',
-  inferred: 'not placed in a chat'
-};
+function attribution(key) { return {
+  request_id: tr("exact request id", "精确请求编号"),
+  unattributed: tr("request id not resolved", "请求编号未解析"),
+  agent: tr("agent key", "智能体标识"),
+  turn: tr("tool block on the page", "页面工具记录"),
+  generation: tr("the only chat generating", "唯一正在生成的对话"),
+  inferred: tr("not placed in a chat", "未关联对话")
+}[key]; }
 
 /**
  * The three stages, from evidence each layer produced independently.
@@ -126,19 +159,19 @@ function pipeline(info, ready) {
 
   if (!info || !info.isChat) return { read: ['off'], sent: ['off'], proc: ['off'], why: ['', ''] };
   if (!info.recorder) {
-    return { read: ['failed'], sent: ['off'], proc: ['off'], why: ['bad', 'No recorder in this tab. Reload the page.'] };
+    return { read: ['failed'], sent: ['off'], proc: ['off'], why: ['bad', tr("No recorder in this tab. Reload the page.", "此标签页未加载同步组件，请刷新页面。")] };
   }
   if (read === 0) {
-    return { read: ['running'], sent: ['off'], proc: ['off'], why: ['', 'Waiting for the first message.'] };
+    return { read: ['running'], sent: ['off'], proc: ['off'], why: ['', tr("Waiting for the first message.", "等待第一条消息。")] };
   }
 
   const readStage = ['done', String(read)];
   if (!ready) {
     return {
       read: readStage,
-      sent: ['failed', pending ? `${pending} held` : ''],
+      sent: ['failed', pending ? tr(`${pending} held`, `${pending} 条待同步`) : ''],
       proc: ['off'],
-      why: ['bad', 'Delivery is blocked until the app is connected and protocol compatibility is confirmed.']
+      why: ['bad', tr("Delivery is blocked until the app is connected and protocol compatibility is confirmed.", "尚未连接或版本不匹配，消息同步已暂停。")]
     };
   }
   if (sent && sent.ok === false) {
@@ -146,7 +179,7 @@ function pipeline(info, ready) {
       read: readStage,
       sent: ['failed', String(sent.error || 'failed')],
       proc: ['off'],
-      why: ['bad', `The app rejected the last delivery (${sent.error || 'failed'}).`]
+      why: ['bad', tr(`The app rejected the last delivery (${sent.error || 'failed'}).`, `知行拒绝了最近一次同步（${sent.error || '失败'}）。`)]
     };
   }
   // Refused by the extension itself, before anything could be queued for the app. `pending`
@@ -157,22 +190,20 @@ function pipeline(info, ready) {
   if (page.blocked) {
     return {
       read: readStage,
-      sent: ['failed', page.queued ? `${page.queued} held in page` : String(page.blocked)],
+      sent: ['failed', page.queued ? tr(`${page.queued} held in page`, `页面保留 ${page.queued} 条`) : String(page.blocked)],
       proc: ['off'],
       why: [
         'bad',
-        'The extension is not accepting this tab’s observations (' +
-          String(page.blocked) +
-          '). Reload the ChatGPT tab.'
+        tr(`The extension is not accepting this tab’s observations (${String(page.blocked)}). Reload the ChatGPT tab.`, `扩展未接收此标签页的数据（${String(page.blocked)}），请刷新 ChatGPT 标签页。`)
       ]
     };
   }
   if (pending > 0) {
     return {
       read: readStage,
-      sent: ['running', `${pending} queued`],
+      sent: ['running', tr(`${pending} queued`, `${pending} 条排队中`)],
       proc: ['off'],
-      why: ['', 'Queued here. Retrying delivery to the app.']
+      why: ['', tr("Queued here. Retrying delivery to the app.", "消息已在本地排队，正在重试同步到知行。")]
     };
   }
 
@@ -183,7 +214,7 @@ function pipeline(info, ready) {
       proc: ['running'],
       // The worker's delivery counters cover every tab. Only the page's session
       // receipt proves that this particular chat reached the app.
-      why: ['', 'App reachable. Waiting for this chat’s session receipt.']
+      why: ['', tr("App reachable. Waiting for this chat’s session receipt.", "可以连接知行，正在等待当前对话的接收确认。")]
     };
   }
   const sentStage = ['done', sent && sent.total ? String(sent.total) : ''];
@@ -198,7 +229,7 @@ function pipeline(info, ready) {
       proc: ['failed', `${placed}/${calls.length}`],
       why: [
         'bad',
-        `The app could not place ${missed.length === 1 ? 'a call' : `${missed.length} calls`} by request id — it fell back to ${ATTRIBUTION[missed[0].app] || missed[0].app}.`
+        tr(`The app could not place ${missed.length === 1 ? 'a call' : `${missed.length} calls`} by request id — it fell back to ${attribution(missed[0].app) || missed[0].app}.`, `有 ${missed.length} 次调用未能按请求编号匹配，使用了${attribution(missed[0].app) || missed[0].app}归因。`)
       ]
     };
   }
@@ -206,7 +237,7 @@ function pipeline(info, ready) {
     read: readStage,
     sent: sentStage,
     proc: ['done', calls.length ? `${placed}/${calls.length}` : ''],
-    why: ['', calls.length ? 'Every tool call matched end to end.' : 'Recording into the app.']
+    why: ['', calls.length ? tr("Every tool call matched end to end.", "所有工具调用均已完成两端匹配。") : tr("Recording into the app.", "正在同步到知行。")]
   };
 }
 
@@ -231,11 +262,11 @@ function paintCalls(page) {
     }
     const tool = document.createElement('span');
     tool.className = 'tool';
-    tool.textContent = entry.tool || 'tool call';
+    tool.textContent = entry.tool || tr("tool call", "工具调用");
     const id = document.createElement('span');
     id.className = 'id';
     id.textContent = shorten(entry.requestId, 5);
-    line.title = `${entry.requestId} — picked up ${entry.read ? 'yes' : 'no'} · sent ${entry.sent ? 'yes' : 'no'} · app ${ATTRIBUTION[entry.app] || 'no record'}`;
+    line.title = `${entry.requestId} — picked up ${entry.read ? 'yes' : 'no'} · sent ${entry.sent ? 'yes' : 'no'} · app ${attribution(entry.app) || tr("no record", "无记录")}`;
     line.append(pips, tool, id);
     box.append(line);
   }
@@ -256,20 +287,20 @@ function paintHeader(status) {
 
   $('pill').className = `pill ${ready ? '' : incompatible ? 'bad' : 'off'}`;
   $('state').textContent = incompatible
-    ? 'Version mismatch'
+    ? tr("Version mismatch", "版本不匹配")
     : needsSetup
-      ? 'Account setup required'
+      ? tr("Account setup required", "需要连接账号")
     : off
-      ? 'Disconnected'
+      ? tr("Disconnected", "已断开")
       : !connected
-        ? 'App not reachable'
+        ? tr("App not reachable", "无法连接知行")
         : ready
           // Health + pairing prove reachability, not the recorder/command flow.
-          ? `App reachable · Port ${status.port}`
-          : `Port ${status.port} · connecting`;
+          ? tr(`App reachable · Port ${status.port}`, `可连接知行 · 端口 ${status.port}`)
+          : tr(`Port ${status.port} · connecting`, `端口 ${status.port} · 正在连接`);
 
   $('retryBtn').hidden = ready || incompatible || needsSetup;
-  $('retryBtn').textContent = off ? 'Connect' : 'Try again';
+  $('retryBtn').textContent = off ? tr("Connect", "连接") : tr("Try again", "重试");
   $('unpairBtn').hidden = !paired || incompatible;
   return ready;
 }
@@ -280,9 +311,9 @@ function paintAlert(status, info) {
   const pairError = status && status.pairError;
   const error = page && page.lastError;
   const text = incompatible
-    ? `App v${status.appVersion || '?'} (protocol ${status.appProtocol ?? '?'}); companion v${status.extensionVersion || '?'} (protocol ${status.extensionProtocol ?? '?'}). Open your browser's Extensions page, enable Developer mode, then Update / Reload this companion. If the mismatch remains, use Open extension folder in Chat On Steroids and load that folder. Reload ChatGPT tabs when their active work is finished.`
+    ? tr(`App v${status.appVersion || '?'} (protocol ${status.appProtocol ?? '?'}); companion v${status.extensionVersion || '?'} (protocol ${status.extensionProtocol ?? '?'}). Open your browser's Extensions page, enable Developer mode, then Update / Reload this companion. If the mismatch remains, use Open extension folder in Chat On Steroids and load that folder. Reload ChatGPT tabs when their active work is finished.`, `应用 v${status.appVersion || '?'}（协议 ${status.appProtocol ?? '?'}），扩展 v${status.extensionVersion || '?'}（协议 ${status.extensionProtocol ?? '?'}）。请在浏览器扩展管理页开启开发者模式并重新加载扩展；仍不匹配时，在知行中打开扩展文件夹并加载该目录。当前工作结束后再刷新 ChatGPT 页面。`)
     : pairError && pairError.message
-      ? pairError.message
+      ? pairErrorText(pairError)
       : pairError && pairError.error === 'secure_storage_unavailable'
         ? 'Secure credential storage is unavailable. Open Chat On Steroids for setup instructions.'
     : error && Date.now() - error.at < 10 * 60 * 1000
@@ -315,39 +346,39 @@ function paintDetails(status, info) {
   const page = info && info.page;
   const sent = info && info.delivery;
 
-  detail(grid, 'app', status ? `v${status.appVersion || '?'} · port ${status.port || '—'}` : null);
+  detail(grid, tr('app', '应用'), status ? `v${status.appVersion || '?'} · port ${status.port || '—'}` : null);
   detail(
     grid,
-    'extension',
+    tr('extension', '扩展'),
     status ? `v${status.extensionVersion} · protocol ${status.extensionProtocol}` : null,
     status && status.compatible === false
   );
-  detail(grid, 'chat id', (info && info.conversationId) || null);
-  detail(grid, 'app session', (page && page.session) || null, Boolean(page && !page.session));
-  detail(grid, 'tab', info ? `${info.tab} · epoch ${info.epoch ?? '—'}` : null);
+  detail(grid, tr("chat id", "对话编号"), (info && info.conversationId) || null);
+  detail(grid, tr("app session", "本地会话"), (page && page.session) || null, Boolean(page && !page.session));
+  detail(grid, tr('tab', '标签页'), info ? `${info.tab} · epoch ${info.epoch ?? '—'}` : null);
   detail(
     grid,
-    'ownership',
-    info ? (info.terminal ? 'retired' : info.bound ? 'bound' : 'unbound') : null,
+    tr("ownership", "归属"),
+    info ? (info.terminal ? tr('retired', '已停用') : info.bound ? tr('bound', '已绑定') : tr('unbound', '未绑定')) : null,
     Boolean(info && info.terminal)
   );
-  detail(grid, 'recorder', page ? `fiber v${page.recorderVersion} · run ${page.runId}` : 'not attached', !page);
-  detail(grid, 'turn', page ? (page.generating ? `${shorten(page.turnId, 8)} · live` : 'idle') : null);
-  detail(grid, 'observed', page ? `${page.events} events · ${page.calls} calls` : null);
+  detail(grid, tr('recorder', '同步组件'), page ? `fiber v${page.recorderVersion} · run ${page.runId}` : tr("not attached", "未加载"), !page);
+  detail(grid, tr('turn', '轮次'), page ? (page.generating ? `${shorten(page.turnId, 8)} · ${tr('live', '运行中')}` : tr('idle', '空闲')) : null);
+  detail(grid, tr("observed", "已观测"), page ? tr(`${page.events} events · ${page.calls} calls`, `${page.events} 个事件 · ${page.calls} 次调用`) : null);
   detail(
     grid,
-    'in this browser',
-    info ? `${info.pending} held · ${info.pendingAll} total` : null,
+    tr("in this browser", "本浏览器待同步"),
+    info ? tr(`${info.pending} held · ${info.pendingAll} total`, `当前 ${info.pending} 条 · 共 ${info.pendingAll} 条`) : null,
     Boolean(info && info.pendingAll)
   );
   detail(
     grid,
-    'last delivery',
+    tr("last delivery", "最近同步"),
     sent && sent.at ? `${sent.ok ? 'ok' : sent.error || 'failed'} · ${sent.events} · ${ago(sent.at)} ago` : null,
     Boolean(sent && sent.ok === false)
   );
-  detail(grid, 'delivered', sent ? sent.total : null);
-  detail(grid, 'page sends', page ? `${page.sends} · ${page.failures} failed` : null, Boolean(page && page.failures));
+  detail(grid, tr("delivered", "累计同步"), sent ? sent.total : null);
+  detail(grid, tr("page sends", "页面发送"), page ? tr(`${page.sends} · ${page.failures} failed`, `${page.sends} 次 · ${page.failures} 次失败`) : null, Boolean(page && page.failures));
 }
 
 async function refresh() {
@@ -357,21 +388,24 @@ async function refresh() {
     chrome.runtime.sendMessage({ type: 'tabStatus' }).catch(() => null),
     chrome.runtime.sendMessage({ type: 'account_pair_status' }).catch(() => null)
   ]);
-  if (!accountPairBusy && epoch === accountUiEpoch) paintAccountPair(account);
+  if (!accountPairBusy && epoch === accountUiEpoch) {
+    if (account?.ok === false) { accountPairError = pairErrorText(account); paintAccountPair(accountPairState || { ok: true }); }
+    else { if (account?.paired) accountPairError = ''; paintAccountPair(account); }
+  }
   latest = { status, tab: info };
 
   const ready = paintHeader(status);
   const isChat = Boolean(info && info.isChat);
   const page = info && info.page;
 
-  row('tab', isChat ? 'ok' : 'off', isChat ? '' : 'none open');
-  row('rec', !isChat ? 'off' : info.recorder ? 'ok' : 'no', !isChat ? '' : info.recorder ? (page.generating ? 'answering' : '') : 'reload');
+  row('tab', isChat ? 'ok' : 'off', isChat ? '' : tr("none open", "未打开"));
+  row('rec', !isChat ? 'off' : info.recorder ? 'ok' : 'no', !isChat ? '' : info.recorder ? (page.generating ? tr("answering", "正在回答") : '') : tr("reload", "请刷新"));
 
   const chatId = info && info.conversationId;
-  idRow('chat', !isChat ? 'off' : chatId ? 'ok' : 'wait', !isChat ? '' : chatId ? shorten(chatId, 8) : 'new chat', chatId);
+  idRow('chat', !isChat ? 'off' : chatId ? 'ok' : 'wait', !isChat ? '' : chatId ? shorten(chatId, 8) : tr("new chat", "新对话"), chatId);
 
   const requestId = page && page.requestId;
-  idRow('req', !isChat ? 'off' : requestId ? 'ok' : 'wait', !isChat ? '' : requestId ? shorten(requestId, 9) : 'none yet', requestId);
+  idRow('req', !isChat ? 'off' : requestId ? 'ok' : 'wait', !isChat ? '' : requestId ? shorten(requestId, 9) : tr("none yet", "尚无"), requestId);
 
   const state = pipeline(info, ready);
   stage('read', ...state.read);
@@ -386,7 +420,7 @@ async function refresh() {
   row(
     'app',
     !isChat ? 'off' : broken ? 'no' : flowing ? 'ok' : 'wait',
-    !isChat ? '' : broken ? 'blocked' : flowing ? ago(info.delivery && info.delivery.at) || 'live' : 'waiting'
+    !isChat ? '' : broken ? tr('blocked', '已暂停') : flowing ? ago(info.delivery && info.delivery.at) || tr('live', '运行中') : tr('waiting', '等待中')
   );
   // Opens itself the first time something is actually wrong, so the panel that explains
   // the failure is already open when the popup is opened to look at one.
@@ -419,12 +453,12 @@ async function copyInto(button, text) {
   const was = button.textContent;
   try {
     await navigator.clipboard.writeText(text);
-    button.textContent = 'copied';
+    button.textContent = tr("copied", "已复制");
   } catch {
-    button.textContent = 'copy failed';
+    button.textContent = tr("copy failed", "复制失败");
   }
   setTimeout(() => {
-    if (button.textContent === 'copied' || button.textContent === 'copy failed') button.textContent = was;
+    if (button.textContent === tr("copied", "已复制") || button.textContent === tr("copy failed", "复制失败")) button.textContent = was;
   }, 900);
 }
 
@@ -484,6 +518,15 @@ $('timeToggle').addEventListener('change', async () => {
 });
 
 // A popup is open for seconds at a time and the three stages move within those seconds.
+void loadPopupLanguage().then(() => { paintAccountPair(accountPairState || { ok: true }); return refresh(); }).catch(() => undefined);
 void loadPreferences().catch(() => undefined);
-void refresh().catch(() => undefined);
 setInterval(() => void refresh().catch(() => undefined), POLL_MS);
+
+$('languageSelect').addEventListener('change', async () => {
+  const selected = $('languageSelect').value;
+  if (!['system', 'en', 'zh-CN'].includes(selected)) return;
+  popupLocale.epoch++; popupLocale.selection = selected; accountPairError = ''; applyPopupLanguage(); paintAccountPair(accountPairState || { ok: true });
+  try { await chrome.storage.local.set({ popupLanguage: selected }); }
+  catch { $('accountPairStatus').textContent = tr('Language preview applied but not saved. Please try again.', '语言已预览但未保存，请重试。'); return; }
+  await refresh().catch(() => undefined);
+});

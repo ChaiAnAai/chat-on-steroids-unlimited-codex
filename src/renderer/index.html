@@ -532,7 +532,7 @@
                   <ol class="extension-install-steps">
                     <li>Copy the installation path shown below.</li>
                     <li>Open chrome://extensions or edge://extensions in the account's browser profile and enable Developer mode.</li>
-                    <li>Choose Load unpacked, paste the path into the folder picker and select that folder. Then return here to confirm the account connection.</li>
+                    <li>Choose Load unpacked and select the installation folder. Then click Connect browser extension below and select your account.</li>
                   </ol>
                   <p class="hint">Installed builds keep this folder in application data, outside the program installation directory. Do not move or delete it after loading. After an app update, reload the extension in the browser.</p>
                   <label for="extensionPath">Extension installation path</label>
@@ -542,6 +542,7 @@
                     <button class="btn" id="bridgeFolder" type="button">
                       <svg class="ico" viewBox="0 0 24 24"><use href="#i-folder" /></svg>Open extension folder
                     </button>
+                    <button class="btn" id="bridgeConnectAccount" type="button">Connect browser extension</button>
                     <button class="btn" id="bridgePrepare" type="button">Prepare / repair extension folder</button>
                     <span class="chosen" id="bridgeState"></span>
                   </div>

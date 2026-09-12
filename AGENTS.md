@@ -1581,6 +1581,17 @@ contents, not only the source marker; failed repair is not installation success.
 is a secondary backup action. Package only `out/main`, `out/preload`, and `out/renderer`;
 local diagnostic artifacts under other `out/` paths are not runtime payloads.
 
+The account panel's Connect extension action opens one two-minute, main-owned invitation.
+`/accounts/setup` projects only that selected locator; it is not account identity or send
+permission. Popup discovery scans the bounded normal and preview port pools, never chooses
+another account automatically, and uses the existing nonce + trusted-main confirmation +
+single-use claim flow. Popup status checks finish a confirmed claim without a separate Finish
+button; closing the popup leaves it resumable until expiry. Preview defaults to 18765–18769;
+explicit `CLF_BRIDGE_PORTS` (including test port 0) stays authoritative. Manual JSON is an
+advanced fallback. Popup language defaults to `chrome.i18n.getUILanguage()`, with a saved
+explicit English/Chinese override; language never changes account configuration or credentials.
+
+
 `extension-export.ts` exports that companion plus the app license through the fixed
 `bridge:downloadExtension` save operation. Cancellation is not success; missing or invalid
 bundles fail visibly. Never infer a downloadable release asset from a preview version string.

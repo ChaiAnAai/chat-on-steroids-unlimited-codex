@@ -2,7 +2,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Account, AccountManagementRequest, AccountManagementResult } from '../shared/accounts.js';
-import { confirmPendingAccountPairing, createAccount, disconnectAccount, getAccount, listAccounts, listPendingAccountPairings, reconnectAccount, removeAccount, setAccountPaused } from './accounts.js';
+import { prepareAccountSetup, accountSetupView, confirmPendingAccountPairing, createAccount, disconnectAccount, getAccount, listAccounts, listPendingAccountPairings, reconnectAccount, removeAccount, setAccountPaused } from './accounts.js';
 import { accountQuotaView } from './session/usage.js';
 import { getConfig } from './config.js';
 import { EXISTING_PROFILE_DIRECTORY, existingAccountBrowserTarget, listExistingBrowserProfiles } from './browser-profiles.js';
@@ -11,6 +11,7 @@ const uuid = z.string().uuid();
 const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('list') }),
   z.object({ action: z.literal('create'), displayName: z.string().trim().min(1).max(160), browser: z.enum(['chrome', 'edge']), existingProfileDirectory: z.string().regex(EXISTING_PROFILE_DIRECTORY).optional() }),
+  z.object({ action: z.literal('prepare-pairing'), accountId: uuid }),
   z.object({ action: z.literal('open'), accountId: uuid }),
   z.object({ action: z.literal('reconnect'), accountId: uuid }),
   z.object({ action: z.literal('confirm'), accountId: uuid, requestId: uuid }),
@@ -21,6 +22,7 @@ const requestSchema = z.discriminatedUnion('action', [
 export interface AccountManagementDependencies {
   userDataPath: string;
   bridgePort?: () => number | null;
+  ensureBridge?: () => Promise<number | null>;
   /** Launch only this owned profile. Opening is not login/pairing/identity proof. */
   openProfile: (account: Account, profileDirectory: string, profileName?: string) => Promise<void>;
   listExistingProfiles?: typeof listExistingBrowserProfiles;
@@ -40,6 +42,10 @@ export function createAccountManagement(deps: AccountManagementDependencies): (r
         if (parsed.existingProfileDirectory && !(await (deps.listExistingProfiles ?? listExistingBrowserProfiles)()).some(row => row.browser === parsed.browser && row.directory === parsed.existingProfileDirectory)) throw new Error('Existing browser profile is unavailable');
         await createAccount({ displayName: parsed.displayName, browser: parsed.browser, profileRef: randomUUID(), ...(parsed.existingProfileDirectory ? { existingProfileDirectory: parsed.existingProfileDirectory } : {}) });
       }
+      else if (parsed.action === 'prepare-pairing') {
+        if (!(await deps.ensureBridge?.() ?? deps.bridgePort?.())) throw new Error('Browser bridge is unavailable');
+        await prepareAccountSetup(parsed.accountId);
+      }
       else if (parsed.action === 'open') {
         const account = await getAccount(parsed.accountId);
         if (!account) throw new Error('Account not found');
@@ -55,10 +61,10 @@ export function createAccountManagement(deps: AccountManagementDependencies): (r
       const quotas = Object.fromEntries(await Promise.all(accounts.map(async account => [account.id, await accountQuotaView(account)] as const)));
       const goal = getConfig().goal;
       const existingProfiles = await (deps.listExistingProfiles ?? listExistingBrowserProfiles)();
-      return { ok: true, data: { accounts, existingProfiles, quotas, quotaPolicy: { reservePercent: goal.reservePercent ?? 10, warningPercent: goal.warningPercent ?? 20 }, pending: await listPendingAccountPairings(), bridgePort: deps.bridgePort?.() ?? null, executionEnabled: false, blockers: ['parallel-execution-unverified'] } };
+      return { ok: true, data: { accounts, setup: await accountSetupView(), existingProfiles, quotas, quotaPolicy: { reservePercent: goal.reservePercent ?? 10, warningPercent: goal.warningPercent ?? 20 }, pending: await listPendingAccountPairings(), bridgePort: deps.bridgePort?.() ?? null, executionEnabled: false, blockers: ['parallel-execution-unverified'] } };
     } catch (error) {
       // Surface a bounded known error, never native process output or a credential-store payload.
-      const safe = ['Existing browser profile is unavailable', 'Browser profile already belongs to an account', 'Account not found', 'At most five accounts are supported', 'Pairing request has changed', 'Pairing expired or superseded', 'Saved pairing is unavailable; pair this browser again'];
+      const safe = ['Browser bridge is unavailable', 'Existing browser profile is unavailable', 'Browser profile already belongs to an account', 'Account not found', 'At most five accounts are supported', 'Pairing request has changed', 'Pairing expired or superseded', 'Saved pairing is unavailable; pair this browser again'];
       return { ok: false, error: error instanceof Error && safe.includes(error.message) ? error.message : 'Account operation failed. Your profile and conversation history were retained; refresh and retry.' };
     }
   };

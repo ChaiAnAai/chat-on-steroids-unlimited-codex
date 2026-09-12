@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Chat On Steroids companion"
+  },
+  "extensionTitle": {
+    "message": "Chat On Steroids"
+  },
+  "extensionDescription": {
+    "message": "Connect your ChatGPT browser profile to the local Chat On Steroids app."
+  }
+}

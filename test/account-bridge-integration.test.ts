@@ -12,7 +12,7 @@ import { initSecretsPath, resetSecretsCacheForTests } from '../src/main/secrets.
 import { initDurableStore, resetDurableForTests, flushDurable } from '../src/main/durable.js';
 import { initSessionStore, resetSessionStoreForTests } from '../src/main/session/store.js';
 import { startBridge, stopBridge, configuredBridgePorts, DEFAULT_PORTS } from '../src/main/bridge.js';
-import { createAccount, confirmPendingAccountPairing, listPendingAccountPairings, getAccount, disconnectAccount, reconnectAccount, resetAccountsForTests } from '../src/main/accounts.js';
+import { prepareAccountSetup, accountSetupView, createAccount, confirmPendingAccountPairing, listPendingAccountPairings, getAccount, disconnectAccount, reconnectAccount, resetAccountsForTests } from '../src/main/accounts.js';
 import { BRIDGE_PROTOCOL } from '../src/main/version.js';
 let dir: string, base: string;
 beforeAll(async () => {
@@ -75,4 +75,26 @@ it('rechecks only an authenticated saved binding after explicit main reconnect; 
   expect(latest.status).toBe(200);
   expect(latest.body).toEqual({ accountId: a.accountId, connectionVersion: a.connectionVersion + 2, identityVerified: false });
   expect(await getAccount(a.accountId)).toMatchObject({ paused: true, identity: null });
+});
+
+it('exposes only an explicit expiring invitation and gates progress by the request nonce', async () => {
+  const account = await createAccount({ displayName: 'Invitation', browser: 'chrome', profileRef: 'test-invitation' });
+  const headers = { 'x-extension-protocol': String(BRIDGE_PROTOCOL), 'x-extension-version': '2.1.1' };
+  expect(await (await fetch(`${base}/accounts/setup`, { headers })).json()).toMatchObject({ setup: null });
+  const setup = await prepareAccountSetup(account.id);
+  const view = await (await fetch(`${base}/accounts/setup`, { headers })).json();
+  expect(view.setup.displayName).toBe('Invitation'); expect(JSON.stringify(view)).not.toMatch(/nonce|bridgeToken|identity/);
+  expect((await fetch(`${base}/accounts/setup`, { headers: { ...headers, origin: 'https://evil.example' } })).status).toBe(403);
+  expect((await fetch(`${base}/accounts/setup`, { headers: { ...headers, 'x-extension-protocol': '13' } })).status).toBe(426);
+  const config = { accountId: account.id, browser: account.browser, profileRef: account.profileRef };
+  expect((await post({ ...config, setupId: 'wrong' })).status).toBe(409);
+  const requested = await post({ ...config, setupId: setup!.setupId }); expect(requested.status).toBe(202);
+  expect((await post({ action: 'status', accountId: account.id, nonce: '0'.repeat(64) })).status).toBe(409);
+  const progress = { action: 'status', accountId: account.id, nonce: requested.body.nonce };
+  expect((await post(progress)).body).toMatchObject({ confirmed: false });
+  await confirmPendingAccountPairing(account.id, requested.body.requestId);
+  expect((await post(progress)).body).toMatchObject({ confirmed: true });
+  expect(JSON.stringify((await post(progress)).body)).not.toMatch(/nonce|bridgeToken/);
+  await disconnectAccount(account.id);
+  expect((await post(progress)).status).toBe(409); expect(await accountSetupView()).toBeNull();
 });

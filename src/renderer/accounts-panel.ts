@@ -28,6 +28,10 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
   label.append(name); browserLabel.append(browser); form.append(label, browserLabel, profileLabel, profileHint, create);
   root.append(heading, closeButton, gate, form, refreshButton, status, list); container.append(root);
   let alive = true, busy = false, generation = 0;
+  let pairingWatchUntil = 0;
+  let pairingSnapshot = '';
+  let pairingPoll: ReturnType<typeof setInterval> | undefined;
+  let polling = false;
   let previousFocus: HTMLElement | null = null;
   const inertBefore = new Map<HTMLElement, boolean>();
   function labels() {
@@ -53,6 +57,8 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
     profile.value = previous;
   }
   function draw(snapshot: AccountManagementSnapshot) {
+    pairingWatchUntil = Math.max(pairingWatchUntil, snapshot.setup?.expiresAt ?? 0);
+    pairingSnapshot = JSON.stringify([snapshot.accounts, snapshot.pending, snapshot.setup]);
     availableProfiles = snapshot.existingProfiles ?? []; profileOptions();
     list.replaceChildren();
     for (const account of snapshot.accounts) {
@@ -74,6 +80,7 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
         const button = document.createElement('button'); button.className = 'btn'; button.type = 'button'; button.textContent = text(en, zh);
         button.onclick = () => { void operate(request); }; actions.append(button);
       }
+      action('Connect extension', '连接扩展', { action: 'prepare-pairing', accountId: account.id });
       action('Open browser profile', '打开浏览器配置', { action: 'open', accountId: account.id });
       action('Reconnect saved pairing', '重连并重新确认身份', { action: 'reconnect', accountId: account.id });
       for (const pending of snapshot.pending.filter(row => row.accountId === account.id)) {
@@ -89,15 +96,22 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
       const instructions = document.createElement('ol');
       for (const line of [
         text('Open this browser profile. In its extension manager, enable developer mode and load the extracted companion extension folder.', '打开此浏览器配置，在扩展管理页开启开发者模式，加载解压后的配套扩展目录。'),
-        text('Copy the configuration below into the companion popup, then request pairing. This is a locator, not an API key.', '将下方配置复制到配套扩展弹窗，发起配对。它是连接定位信息，不是 API Key。'),
-        text('Return here, check pairing requests, and confirm the request from this profile. Then select Finish pairing in that extension.', '返回这里检查配对请求，确认此浏览器的请求，再到该扩展点击“完成配对”。'),
+        text('Click Connect extension here, then open the extension in this browser profile and click Find app. Select this account.', '在这里点“连接扩展”，再打开此浏览器个人资料中的扩展，点“查找知行”并选择这个账号。'),
+        text('Compare the request code and confirm here. Reopen the extension to see pairing complete automatically.', '核对请求编号，在这里确认。重新打开扩展即可自动完成配对，无需再点“完成”。'),
         account.existingProfileDirectory ? text('The existing browser keeps its login. Confirm the intended ChatGPT account; pairing alone does not verify identity or start work.', '已有浏览器保留原登录状态，请核对当前 ChatGPT 账号。完成配对不代表身份已核验，也不会启动任务。') : text('Sign in through the dedicated browser. Pairing alone does not verify the ChatGPT identity or start work.', '在专用浏览器内登录。完成配对不代表 ChatGPT 身份已核验，也不会启动任务。')
       ]) { const item = document.createElement('li'); item.textContent = line; instructions.append(item); }
       const code = document.createElement('textarea'); code.readOnly = true; code.rows = 3;
       code.setAttribute('aria-label', text('Non-secret browser configuration', '浏览器连接配置（不含密钥）'));
       code.value = JSON.stringify({ accountId: account.id, profileRef: account.profileRef, browser: account.browser, ...(snapshot.bridgePort ? { port: snapshot.bridgePort } : {}) });
       code.onfocus = () => code.select();
-      guide.append(guideTitle, instructions, code);
+      const advanced = document.createElement('details');
+      const advancedTitle = document.createElement('summary'); advancedTitle.textContent = text('Advanced: manual configuration', '高级：手动连接配置');
+      advanced.append(advancedTitle, code); guide.append(guideTitle, instructions, advanced);
+      if (snapshot.setup?.accountId === account.id) {
+        guide.open = true; const next = document.createElement('p');
+        next.textContent = text('Ready for two minutes. Open this profile’s extension and select Find app. No configuration code is needed.', '连接邀请已准备好，有效期两分钟。打开此个人资料的扩展，点“查找知行”，不需要复制配置码。');
+        guide.prepend(next);
+      }
       card.append(title, identity, state, quota, actions, guide); list.append(card);
     }
     if (!snapshot.accounts.length) { const empty = document.createElement('p'); empty.textContent = text('Add a browser profile to begin. Opening it does not confirm login.', '添加浏览器配置以开始使用。打开浏览器并不代表已登录。'); list.append(empty); }
@@ -106,7 +120,7 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
   }
   async function operate(request: AccountManagementRequest): Promise<void> {
     if (!alive || busy || root.hidden) return;
-    const captured = generation; busy = true;
+    const captured = ++generation; busy = true;
     for (const button of root.querySelectorAll<HTMLButtonElement>('button')) if (button !== closeButton) button.disabled = true;
     status.textContent = text('Working…', '正在处理…');
     try {
@@ -118,6 +132,7 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
       status.textContent = request.action === 'open' ? text('Browser launch requested. Login and pairing are still checked separately.', '已请求打开浏览器，登录与配对仍需分别确认。') : text('Updated', '已更新');
     } catch (error) {
       const known: Record<string, [string, string]> = {
+        'Browser bridge is unavailable': ['The local bridge could not start. Close conflicting preview instances and retry.', '本地连接服务未能启动，请关闭冲突的测试版后重试。'],
         'Existing browser profile is unavailable': ['That profile is no longer available. Refresh and select it again; no other profile was opened.', '该个人资料当前不可用，请刷新后重新选择。未打开其他资料。'],
         'Browser profile already belongs to an account': ['This browser profile is already linked. Use its existing account entry.', '这个浏览器个人资料已接入，请使用已有的账号入口。'],
         'Account not found': ['This account entry was removed. Refresh the list.', '该账号入口已被移除，请刷新列表。'],
@@ -133,7 +148,23 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
       if (alive && captured === generation) for (const button of root.querySelectorAll<HTMLButtonElement>('button')) button.disabled = button.dataset.permanentlyDisabled === 'true';
     }
   }
+  async function pollPairing() {
+    if (root.hidden || busy || polling || Date.now() >= pairingWatchUntil) return;
+    const epoch = generation; polling = true;
+    try {
+      const result = await deps.manage({ action: 'list' });
+      if (!alive || root.hidden || busy || epoch !== generation || !result.ok) return;
+      const next = JSON.stringify([result.data.accounts, result.data.pending, result.data.setup]);
+      if (next !== pairingSnapshot) {
+        const focused = document.activeElement as HTMLElement | null;
+        const caption = focused?.closest('.accounts-card') ? focused.textContent : null;
+        draw(result.data);
+        if (caption) [...list.querySelectorAll('button')].find(button => button.textContent === caption)?.focus();
+      }
+    } finally { polling = false; }
+  }
   function close() {
+    clearInterval(pairingPoll); pairingPoll = undefined;
     generation++; busy = false; root.hidden = true;
     for (const [element, inert] of inertBefore) element.inert = inert;
     inertBefore.clear();
@@ -148,7 +179,7 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
     for (const element of document.body.children) if (element instanceof HTMLElement && !element.contains(root)) {
       inertBefore.set(element, element.inert); element.inert = true;
     }
-    root.hidden = false; labels(); closeButton.focus(); void operate({ action: 'list' });
+    root.hidden = false; pairingPoll = setInterval(() => { void pollPairing().catch(() => undefined); }, 1500); labels(); closeButton.focus(); void operate({ action: 'list' });
   }
   closeButton.onclick = close;
   refreshButton.onclick = () => { void operate({ action: 'list' }); };

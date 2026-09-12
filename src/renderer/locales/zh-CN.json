@@ -1243,7 +1243,7 @@
   "The matching extension is included with this app. Prepare its folder, copy the installation path, then load that folder in Chrome or Edge.": "软件已附带配套扩展。准备好文件夹后，复制安装路径，在 Chrome 或 Edge 中加载该文件夹即可。",
   "Copy the installation path shown below.": "复制下方的扩展安装路径。",
   "Open chrome://extensions or edge://extensions in the account's browser profile and enable Developer mode.": "在对应账号的浏览器个人资料中打开 chrome://extensions 或 edge://extensions，开启“开发者模式”。",
-  "Choose Load unpacked, paste the path into the folder picker and select that folder. Then return here to confirm the account connection.": "点击“加载已解压的扩展程序”，在文件夹选择窗口中粘贴路径并选定该文件夹。之后返回知行确认账号连接。",
+  "Choose Load unpacked and select the installation folder. Then click Connect browser extension below and select your account.": "点击“加载已解压的扩展程序”并选择安装目录，然后点击下方“连接浏览器扩展”并选择账号。",
   "Installed builds keep this folder in application data, outside the program installation directory. Do not move or delete it after loading. After an app update, reload the extension in the browser.": "安装版会把扩展放在应用数据目录，不要求放在程序安装目录。加载后请勿移动或删除该文件夹；软件更新后，请在浏览器扩展管理页重新加载扩展。",
   "Extension installation path": "扩展安装路径",
   "Copy installation path": "复制安装路径",
@@ -1263,5 +1263,6 @@
   "Execution & diagnostics": "运行与诊断",
   "Search automation settings": "搜索自动化设置",
   "Search automation settings…": "搜索自动化设置…",
-  "Account management": "账号管理"
+  "Account management": "账号管理",
+  "Connect browser extension": "连接浏览器扩展"
 }

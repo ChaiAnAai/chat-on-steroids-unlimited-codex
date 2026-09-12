@@ -851,7 +851,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
   handle('chatModels:get', async () => getChatModels());
   handle('browser:preferences', async (payload) => {
     if (payload && typeof payload === 'object' && 'accounts' in payload) {
-      const manage = createAccountManagement({ userDataPath: app.getPath('userData'), bridgePort: () => bridgePort(),
+      const manage = createAccountManagement({ userDataPath: app.getPath('userData'), bridgePort: () => bridgePort(), ensureBridge: startBridge,
         openProfile: async (account, profileDirectory, profileName) => {
           await openInPreferredBrowser('https://chatgpt.com/', { browser: account.browser, profileDirectory, profileName });
         } });

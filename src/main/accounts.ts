@@ -14,6 +14,25 @@ interface PendingPairing { nonce: string; requestId: string; expiresAt: number; 
 let registry: Account[] | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 const pending = new Map<string, PendingPairing>();
+let setup: { accountId: string; setupId: string; expiresAt: number; connectionVersion: number } | null = null;
+/** A short-lived, explicitly selected locator, never a credential or login proof. */
+export function prepareAccountSetup(id: string) {
+  return serial(async () => {
+    const row = find(id);
+    setup = { accountId: id, setupId: randomUUID(), expiresAt: Date.now() + PAIRING_TTL_MS, connectionVersion: row.connectionVersion };
+    return setupView();
+  });
+}
+function setupView() {
+  if (!setup) return null;
+  const row = registry!.find(account => account.id === setup!.accountId);
+  if (!row || setup.expiresAt <= Date.now() || row.connectionVersion !== setup.connectionVersion) return null;
+  return { accountId: row.id, setupId: setup.setupId, expiresAt: setup.expiresAt, displayName: row.displayName, browser: row.browser, profileRef: row.profileRef };
+}
+export function accountSetupView() { return serial(async () => setupView()); }
+export function accountPairingStatus(id: string, nonce: string) {
+  return serial(async () => { const pair = pairing(id, nonce); return { confirmed: pair.confirmed, requestId: pair.requestId, expiresAt: pair.expiresAt }; });
+}
 const copy = <T>(value: T): T => structuredClone(value);
 function key(id: string, surface: AccountSurface): SecretKey { return `account:${id}:${surface}`; }
 function equal(left: string, right: string): boolean {
@@ -77,9 +96,10 @@ export function createAccount(input: z.input<typeof createSchema>): Promise<Acco
   });
 }
 /** Bridge request only. The renderer may display account metadata but never receives this nonce. */
-export function requestAccountPairing(id: string, profile: Pick<Account, 'browser' | 'profileRef'>): Promise<{ nonce: string; requestId: string; expiresAt: number }> {
+export function requestAccountPairing(id: string, profile: Pick<Account, 'browser' | 'profileRef'>, setupId?: string): Promise<{ nonce: string; requestId: string; expiresAt: number }> {
   return serial(async () => {
     const row = find(id);
+    if (setupId !== undefined && (setupView()?.setupId !== setupId || setup?.accountId !== id)) throw new Error('Pairing expired or superseded');
     if (row.browser !== profile.browser || row.profileRef !== profile.profileRef) throw new Error('Pairing profile does not match');
     const existing = pending.get(id);
     if (existing && existing.expiresAt > Date.now()) throw new Error('Pairing already pending');
@@ -199,4 +219,4 @@ export function resolveMcpAccountToken(surface: Exclude<AccountSurface, 'bridge'
   });
 }
 /** Only after all operations settle; simulates a new process against the same durable files. */
-export function resetAccountsForTests(): void { registry = null; pending.clear(); queue = Promise.resolve(); }
+export function resetAccountsForTests(): void { registry = null; setup = null; pending.clear(); queue = Promise.resolve(); }

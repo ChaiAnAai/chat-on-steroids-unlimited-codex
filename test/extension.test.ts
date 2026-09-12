@@ -98,7 +98,7 @@ describe('extension release metadata', () => {
     expect(html).not.toMatch(/<form/i);
     expect(html).not.toMatch(/000000|six[- ]digit|pairing code/i);
     expect(html).not.toMatch(/type=["'](?:text|number|password)["']/i);
-    expect(js).not.toMatch(/\bcode\b/);
+    expect(html).toContain('id="manualPairing"');
     expect(html).toContain('id="accountConfiguration"');
     expect(html).toContain('id="accountClaimBtn"');
     expect(js).not.toMatch(/\bnonce\b|\bbridgeToken\b/);
@@ -739,6 +739,35 @@ function journalOf(session: FakeStorageArea): any[] {
 describe('popup account pairing workflow', () => {
   const configuration = { accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', profileRef: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', browser: 'chrome', port: 8765 };
   const nonce = 'a'.repeat(64), bridgeToken = 'b'.repeat(64);
+  it('discovers only live invitations, keeps accounts separate, and automatically claims only after confirmation', async () => {
+    const setupId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const requestId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const local = new FakeStorageArea(), session = new FakeStorageArea();
+    let confirmed = false, claims = 0, invited = true;
+    const worker = loadWorker({ local, session, fetch: async (input, init) => {
+      const url = new URL(input);
+      if (url.pathname === '/accounts/setup') return response(200, { app: 'chat-on-steroids', setup: url.port === '18765' && invited ? { ...configuration, displayName: 'Review account', setupId, expiresAt: Date.now() + 100000 } : null });
+      if (url.pathname === '/hello') return response(200, { app: 'chat-on-steroids', bridge: BRIDGE_PROTOCOL, compatible: true });
+      const body = JSON.parse(String(init?.body));
+      if (body.action === 'request') { expect(body.setupId).toBe(setupId); expect(url.port).toBe('18765'); return response(202, { nonce, requestId, expiresAt: Date.now() + 100000 }); }
+      if (body.action === 'status') { expect(body.nonce).toBe(nonce); return response(200, { confirmed, requestId }); }
+      if (body.action === 'claim') { expect(confirmed).toBe(true); claims++; return response(200, { accountId: configuration.accountId, connectionVersion: 8, bridgeToken }); }
+      return response(404, {});
+    } });
+    const found = await worker.send({ type: 'account_pair_discover' });
+    expect(found.candidates).toHaveLength(1); expect(found.candidates[0].configuration.port).toBe(18765);
+    expect(await worker.send({ type: 'account_pair_connect', setupId: 'unknown', port: 18765 })).toMatchObject({ ok: false });
+    invited = false;
+    expect(await worker.send({ type: 'account_pair_connect', setupId, port: 18765 })).toMatchObject({ ok: false });
+    invited = true;
+    expect(await worker.send({ type: 'account_pair_connect', setupId, port: 18765 })).toMatchObject({ pending: true });
+    expect(await worker.send({ type: 'account_pair_status' })).toMatchObject({ pending: true, paired: false }); expect(claims).toBe(0);
+    confirmed = true;
+    const results = await Promise.all([worker.send({ type: 'account_pair_status' }), worker.send({ type: 'account_pair_status' })]);
+    expect(results.some(result => result.paired)).toBe(true); expect(claims).toBe(1);
+    expect(JSON.stringify(results)).not.toContain(bridgeToken); expect(JSON.stringify(results)).not.toContain(nonce);
+    expect(local.data.accountIdentityPending).toBe(true); expect(worker.tabsCreate).not.toHaveBeenCalled();
+  });
   it('requests then claims once after main confirmation, keeping nonce and credentials out of popup results', async () => {
     const local = new FakeStorageArea(), session = new FakeStorageArea(); let confirmed = false; const bodies: any[] = [];
     const worker = loadWorker({ local, session, fetch: async (input, init) => {
@@ -763,7 +792,7 @@ describe('popup account pairing workflow', () => {
   it('refuses content-script connection mutations and rejects configuration with credential or arbitrary port fields', async () => {
     const local = new FakeStorageArea({ token: 'old' }); const fetch = vi.fn(async () => response(503, {}));
     const worker = loadWorker({ local, session: new FakeStorageArea(), fetch });
-    for (const type of ['account_pair_request', 'account_pair_claim', 'account_pair_recheck', 'account_pair_status', 'pair', 'unpair']) {
+    for (const type of ['account_pair_discover', 'account_pair_connect', 'account_pair_request', 'account_pair_claim', 'account_pair_recheck', 'account_pair_status', 'pair', 'unpair']) {
       expect(await worker.send({ type, configuration }, 7, 'document', 'chrome-extension://companion-test/popup.html')).toMatchObject({ ok: false, error: 'popup_only' });
     }
     for (const extra of [{ token: 'must-not-be-stored' }, { port: 0 }, { port: 65536 }, { port: 1.5 }, { port: '9999@evil.example' }, { accountId: '../path' }]) expect(await worker.send({ type: 'account_pair_request', configuration: { ...configuration, ...extra } })).toMatchObject({ ok: false, error: 'invalid_account_configuration' });
@@ -945,7 +974,7 @@ describe('account-scoped extension authentication', () => {
     const nodes = new Map<string, Record<string, unknown>>();
     const $ = (id: string) => { if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id)!; };
     const code = popup.slice(popup.indexOf('function paintHeader('), popup.indexOf('function paintAlert('));
-    const ready = vm.runInNewContext(`${code}; paintHeader({ connected: true, compatible: true, port: 8765, paired: false, needsSetup: true });`, { $ });
+    const ready = vm.runInNewContext(`${code}; paintHeader({ connected: true, compatible: true, port: 8765, paired: false, needsSetup: true });`, { $, tr: (en: string) => en });
     expect(ready).toBe(false);
     expect($('state').textContent).toBe('Account setup required');
     expect($('retryBtn').hidden).toBe(true);

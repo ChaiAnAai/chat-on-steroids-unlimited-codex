@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "知行浏览器扩展"
+  },
+  "extensionTitle": {
+    "message": "知行 · Chat On Steroids"
+  },
+  "extensionDescription": {
+    "message": "连接 ChatGPT 浏览器个人资料与本地知行，查看连接状态并同步对话和工具结果。"
+  }
+}

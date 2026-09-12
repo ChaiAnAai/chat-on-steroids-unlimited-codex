@@ -1,5 +1,5 @@
 import { conversationProgress } from './session/progress.js';
-import { authenticateAccount, requestAccountPairing, claimAccountPairing, listAccounts } from './accounts.js';
+import { accountSetupView, accountPairingStatus, authenticateAccount, requestAccountPairing, claimAccountPairing, listAccounts } from './accounts.js';
 import { currentAccountTransport, withAccountTransport } from './account-context.js';
 import { accountRouteError } from './bridge-account-scope.js';
 import { indexedSessions } from './session/store.js';
@@ -1383,12 +1383,19 @@ async function handleCore(req: http.IncomingMessage, res: http.ServerResponse): 
     );
   }
 
+  if (route === '/accounts/setup' && req.method === 'GET') {
+    if (!protocolCompatible(req)) return json(res, 426, { error: 'incompatible_extension' }, origin);
+    return json(res, 200, { app: 'chat-on-steroids', setup: await accountSetupView() }, origin);
+  }
+
   if (route === '/accounts/pair' && req.method === 'POST') {
     if (!protocolCompatible(req)) return json(res, 426, { error: 'incompatible_extension', bridge: BRIDGE_PROTOCOL }, origin);
     if (rateLimited()) return json(res, 429, { error: 'rate_limited' }, origin);
     const raw = await readBody(req) as Record<string, unknown>;
     if (!raw || typeof raw.accountId !== 'string') return json(res, 400, { error: 'invalid_account_pairing' }, origin);
     try {
+      if (raw.action === 'status' && typeof raw.nonce === 'string') return json(res, 200, await accountPairingStatus(raw.accountId, raw.nonce), origin);
+      if (raw.action !== undefined && !['request', 'claim', 'recheck'].includes(String(raw.action))) return json(res, 400, { error: 'invalid_account_pairing' }, origin);
       if (raw.action === 'recheck') {
         const bearer = req.headers.authorization;
         const principal = typeof bearer === 'string' && bearer.startsWith('Bearer ')
@@ -1400,7 +1407,7 @@ async function handleCore(req: http.IncomingMessage, res: http.ServerResponse): 
       }
       if (typeof raw.nonce === 'string') return json(res, 200, await claimAccountPairing(raw.accountId, raw.nonce), origin);
       if ((raw.browser !== 'chrome' && raw.browser !== 'edge') || typeof raw.profileRef !== 'string') return json(res, 400, { error: 'invalid_account_profile' }, origin);
-      return json(res, 202, await requestAccountPairing(raw.accountId, { browser: raw.browser, profileRef: raw.profileRef }), origin);
+      return json(res, 202, await requestAccountPairing(raw.accountId, { browser: raw.browser, profileRef: raw.profileRef }, raw.setupId === undefined ? undefined : String(raw.setupId)), origin);
     } catch { return json(res, 409, { error: 'account_pairing_pending_or_invalid' }, origin); }
   }
 

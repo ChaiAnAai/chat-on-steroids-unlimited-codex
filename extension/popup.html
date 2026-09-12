@@ -24,62 +24,69 @@
 
       <header>
         <img class="glyph" src="icons/icon48.png" alt="" width="34" height="34" />
-        <h1>Chat On Steroids</h1>
+        <h1 data-zh="知行">Chat On Steroids</h1>
+        <select id="languageSelect" aria-label="Language / 语言">
+          <option value="system" data-zh="跟随浏览器">Browser language</option>
+          <option value="zh-CN">简体中文</option><option value="en">English</option>
+        </select>
       </header>
 
-      <p class="pill off" id="pill"><span class="dot"></span><span id="state">Looking for the app</span></p>
+      <p class="pill off" id="pill"><span class="dot"></span><span id="state" data-zh="正在查找知行">Looking for the app</span></p>
 
 
       <p class="alert" id="alert" hidden></p>
-      <details id="accountGuide" class="account-guide">
-        <summary>账号配对 · Account pairing</summary>
-        <p>在知行打开这个账号的专用浏览器配置，并复制非秘密配置码。此配置码不是密码或 API Key。</p>
-        <label for="accountConfiguration">账号配置 JSON · Configuration</label>
-        <textarea id="accountConfiguration" rows="3" maxlength="2048" spellcheck="false" autocomplete="off" placeholder='{"accountId":"…","profileRef":"…","browser":"chrome"}'></textarea>
-        <ol><li>请求配对 · Request pairing</li><li>在知行确认本次请求 · Confirm in 知行</li><li>回到这里完成配对 · Finish pairing here</li></ol>
-        <div class="actions"><button id="accountRequestBtn" type="button">请求配对</button><button id="accountClaimBtn" type="button" disabled>完成配对</button></div>
-        <p>重启后先在知行点击“重连并重新确认身份”，然后检查已保存连接；不会恢复旧任务或重发回执。</p>
-        <button id="accountRecheckBtn" type="button" disabled>检查已保存连接 · Recheck</button>
-        <p id="accountPairStatus" role="status" aria-live="polite">登录身份适配器仍待验证，配对后不会启用自动执行。</p>
-      </details>
-      <p class="caption">Session capture</p>
+      <section id="accountGuide" class="account-guide">
+        <h2 data-zh="连接知行">Connect to the app</h2>
+        <p data-zh="先在知行的账号管理中选中账号，点“连接扩展”，然后在这里查找。">Select an account in the app and click Connect extension, then find it here.</p>
+        <button id="accountFindBtn" type="button" data-zh="查找知行">Find app</button>
+        <div id="accountCandidates" aria-live="polite"></div>
+        <p id="accountPairStatus" role="status" aria-live="polite"></p>
+        <button id="accountRecheckBtn" type="button" disabled data-zh="检查已保存连接">Check saved connection</button>
+        <details id="manualPairing">
+          <summary data-zh="高级：手动连接">Advanced: manual connection</summary>
+          <label for="accountConfiguration" data-zh="连接配置（不含密钥）">Connection configuration (no secrets)</label>
+          <textarea id="accountConfiguration" rows="3" maxlength="2048" spellcheck="false" autocomplete="off"></textarea>
+          <div class="actions"><button id="accountRequestBtn" type="button" data-zh="请求配对">Request pairing</button><button id="accountClaimBtn" type="button" disabled data-zh="再次检查确认">Check confirmation again</button></div>
+        </details>
+      </section>
+      <p class="caption" data-zh="对话同步">Session capture</p>
       <section class="card">
         <div class="row" id="r-tab">
           <svg class="ico"><use href="#i-tab" /></svg>
-          <span class="name">ChatGPT tab</span>
+          <span class="name" data-zh="ChatGPT 标签页">ChatGPT tab</span>
           <span class="meta" id="d-tab"></span>
           <span class="badge"></span>
       </div>
       <div class="row" id="r-rec">
         <svg class="ico"><use href="#i-rec" /></svg>
-        <span class="name">Recording this chat</span>
+        <span class="name" data-zh="同步当前对话">Recording this chat</span>
         <span class="meta" id="d-rec"></span>
         <span class="badge"></span>
       </div>
       <div class="row" id="r-chat">
         <svg class="ico"><use href="#i-hash" /></svg>
-        <span class="name">Chat ID</span>
+        <span class="name" data-zh="对话编号">Chat ID</span>
         <button class="meta copy" id="d-chat" type="button"></button>
         <span class="badge"></span>
       </div>
       <div class="row" id="r-req">
         <svg class="ico"><use href="#i-req" /></svg>
-        <span class="name">Request ID</span>
+        <span class="name" data-zh="请求编号">Request ID</span>
         <button class="meta copy" id="d-req" type="button"></button>
         <span class="badge"></span>
       </div>
       <details id="stream">
         <summary class="row" id="r-app">
           <svg class="ico"><use href="#i-send" /></svg>
-          <span class="name">Reaching the app</span>
+          <span class="name" data-zh="同步到知行">Reaching the app</span>
           <span class="meta" id="d-app"></span>
           <span class="badge"></span>
           <span class="chevron" aria-hidden="true"></span>
         </summary>
         <div class="stages">
-          <div class="stage" id="s-read"><span class="tick"></span><span class="name">Picked up</span><span class="meta" id="n-read"></span></div>
-          <div class="stage" id="s-sent"><span class="tick"></span><span class="name">Sent to app</span><span class="meta" id="n-sent"></span></div>
-          <div class="stage" id="s-proc"><span class="tick"></span><span class="name">App processed</span><span class="meta" id="n-proc"></span></div>
+          <div class="stage" id="s-read"><span class="tick"></span><span class="name" data-zh="已从页面读取">Picked up</span><span class="meta" id="n-read"></span></div>
+          <div class="stage" id="s-sent"><span class="tick"></span><span class="name" data-zh="已发送到知行">Sent to app</span><span class="meta" id="n-sent"></span></div>
+          <div class="stage" id="s-proc"><span class="tick"></span><span class="name" data-zh="知行已处理">App processed</span><span class="meta" id="n-proc"></span></div>
           <p class="why" id="why"></p>
           <div class="calls" id="calls"></div>
         </div>
@@ -87,17 +94,17 @@
     </section>
 
 
-    <p class="caption">Augment ChatGPT</p>
+    <p class="caption" data-zh="ChatGPT 增强">Augment ChatGPT</p>
     <section class="card">
       <label class="row" for="overwriteToggle">
         <svg class="ico"><use href="#i-pen" /></svg>
-        <span class="name">Overwrite ChatGPT</span>
+        <span class="name" data-zh="显示知行工具结果">Overwrite ChatGPT</span>
         <input id="overwriteToggle" type="checkbox" checked />
         <span class="track" aria-hidden="true"><span class="thumb"></span></span>
       </label>
       <label class="row" for="timeToggle">
         <svg class="ico"><use href="#i-clock" /></svg>
-        <span class="name">Timestamps</span>
+        <span class="name" data-zh="显示时间">Timestamps</span>
         <input id="timeToggle" type="checkbox" />
         <span class="track" aria-hidden="true"><span class="thumb"></span></span>
       </label>
@@ -106,22 +113,23 @@
     <details id="more">
       <summary class="card row">
         <svg class="ico"><use href="#i-more" /></svg>
-        <span class="name">Advanced</span>
+        <span class="name" data-zh="诊断详情">Advanced</span>
         <span class="chevron" aria-hidden="true"></span>
       </summary>
       <dl class="grid" id="grid"></dl>
       <div class="actions">
-        <button id="copyBtn" type="button">Copy</button>
-        <button id="retryBtn" type="button" hidden>Try again</button>
-        <button id="unpairBtn" type="button" hidden>Disconnect</button>
+        <button id="copyBtn" type="button" data-zh="复制诊断信息">Copy</button>
+        <button id="retryBtn" type="button" hidden data-zh="重试">Try again</button>
+        <button id="unpairBtn" type="button" hidden data-zh="断开连接">Disconnect</button>
       </div>
     </details>
 
     <div class="actions reload-action">
-      <button id="reloadBtn" type="button">Reload companion</button>
+      <button id="reloadBtn" type="button" data-zh="重新加载扩展">Reload companion</button>
     </div>
 
     </div>
+    <script src="popup-i18n.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

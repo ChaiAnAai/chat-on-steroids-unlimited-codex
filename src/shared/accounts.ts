@@ -34,9 +34,10 @@ export interface PendingAccountPairing {
 }
 export interface ExistingBrowserProfile { browser: Account['browser']; directory: string; displayName: string }
 export type AccountManagementRequest = { action: 'list' } | { action: 'create'; displayName: string; browser: Account['browser']; existingProfileDirectory?: string } |
-  { action: 'open' | 'reconnect' | 'pause' | 'disconnect' | 'remove'; accountId: string } |
+  { action: 'prepare-pairing' | 'open' | 'reconnect' | 'pause' | 'disconnect' | 'remove'; accountId: string } |
   { action: 'confirm'; accountId: string; requestId: string };
 export interface AccountManagementSnapshot {
+  setup?: { accountId: string; expiresAt: number } | null;
   accounts: Account[];
   existingProfiles?: ExistingBrowserProfile[];
   pending: PendingAccountPairing[];

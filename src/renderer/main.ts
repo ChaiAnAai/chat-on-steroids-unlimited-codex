@@ -1828,6 +1828,7 @@ ui(profile, 'title', () => currentLanguage() === 'zh-CN' ? '账号管理' : 'Acc
 ui(profile, 'aria-label', () => currentLanguage() === 'zh-CN' ? '账号管理' : 'Account management');
 profile.onclick = () => accountsPanel.open();
 $('connectionAccounts').addEventListener('click', () => accountsPanel.open());
+$('bridgeConnectAccount').addEventListener('click', () => accountsPanel.open());
 document.querySelector('.sidebar-bottom')!.prepend(profile);
 ui(document.querySelector('.sidebar-brand strong')!, 'textContent', () => currentLanguage() === 'zh-CN' ? '知行' : 'Chat On Steroids');
 ui(document.querySelector('title')!, 'textContent', () => currentLanguage() === 'zh-CN' ? '知行 · Chat On Steroids' : 'Chat On Steroids');

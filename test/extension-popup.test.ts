@@ -4,16 +4,18 @@ import { JSDOM } from 'jsdom';
 
 const html = await readFile(new URL('../extension/popup.html', import.meta.url), 'utf8');
 const script = await readFile(new URL('../extension/popup.js', import.meta.url), 'utf8');
+const localeScript = await readFile(new URL('../extension/popup-i18n.js', import.meta.url), 'utf8');
 let popup: JSDOM | undefined;
 afterEach(() => { popup?.window.close(); });
 
-function openPopup(reload: () => void, sendMessage?: (message: Record<string, unknown>) => Promise<unknown>) {
+function openPopup(reload: () => void, sendMessage?: (message: Record<string, unknown>) => Promise<unknown>, language = 'en', saved = {}) {
   popup = new JSDOM(html, { url: 'https://extension-popup.test/', runScripts: 'outside-only' });
   const unavailable = () => new Promise(() => undefined);
   Object.assign(popup.window, {
-    chrome: { runtime: { reload, sendMessage: sendMessage ?? unavailable }, storage: { local: { get: unavailable } } },
+    chrome: { i18n: { getUILanguage: () => language }, runtime: { reload, sendMessage: sendMessage ?? unavailable }, storage: { local: { get: async () => saved, set: async () => undefined } } },
     setInterval: () => 0
   });
+  popup.window.eval(localeScript);
   popup.window.eval(script);
   return popup.window.document;
 }
@@ -73,7 +75,7 @@ it('shows the safe request ID for main confirmation and never receives the claim
   const document = openPopup(vi.fn(), async message => {
     requests.push(message);
     if (message.type === 'account_pair_request') return { ok: true, pending: true, expiresAt: Date.now() + 100000, requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' };
-    if (message.type === 'account_pair_claim') return { ok: true, paired: true, pending: false, identityPending: true };
+    if (message.type === 'account_pair_status') return { ok: true, paired: true, pending: false, identityPending: true };
     return new Promise(() => undefined);
   });
   const configuration = document.getElementById('accountConfiguration') as HTMLTextAreaElement; configuration.value = '{"accountId":"local-config"}';
@@ -81,18 +83,52 @@ it('shows the safe request ID for main confirmation and never receives the claim
   await vi.waitFor(() => expect(document.getElementById('accountPairStatus')!.textContent).toContain('cccccccc'));
   expect(requests.find(row => row.type === 'account_pair_request')).toEqual({ type: 'account_pair_request', configuration: configuration.value });
   document.getElementById('accountClaimBtn')!.click();
-  await vi.waitFor(() => expect(document.getElementById('accountPairStatus')!.textContent).toContain('身份待验证'));
-  expect(requests.find(row => row.type === 'account_pair_claim')).toEqual({ type: 'account_pair_claim' });
+  await vi.waitFor(() => expect(document.getElementById('accountPairStatus')!.textContent).toContain('Login identity still needs verification'));
+  expect(requests.find(row => row.type === 'account_pair_status')).toEqual({ type: 'account_pair_status' });
 });
-it('retains configuration and exposes manual retry after an unconfirmed claim without polling claim again', async () => {
+it('retains advanced configuration and allows a status recheck without requesting another pairing', async () => {
   let claims = 0;
   const document = openPopup(vi.fn(), async message => {
     if (message.type === 'account_pair_request') return { ok: true, pending: true, expiresAt: Date.now() + 100000, requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' };
-    if (message.type === 'account_pair_claim') { claims++; return { ok: false, error: 'pairing_pending_or_invalid', message: 'Confirm in 知行 first' }; }
+    if (message.type === 'account_pair_status') { claims++; return { ok: false, error: 'pairing_pending_or_invalid', message: 'Confirm in 知行 first' }; }
     return new Promise(() => undefined);
   });
   const configuration = document.getElementById('accountConfiguration') as HTMLTextAreaElement; configuration.value = 'retained configuration';
   document.getElementById('accountRequestBtn')!.click(); await vi.waitFor(() => expect((document.getElementById('accountClaimBtn') as HTMLButtonElement).disabled).toBe(false));
-  document.getElementById('accountClaimBtn')!.click(); await vi.waitFor(() => expect(document.getElementById('accountPairStatus')!.textContent).toContain('Confirm in 知行'));
-  expect(configuration.value).toBe('retained configuration'); expect(claims).toBe(1); expect((document.getElementById('accountClaimBtn') as HTMLButtonElement).disabled).toBe(false);
+  document.getElementById('accountClaimBtn')!.click(); await vi.waitFor(() => expect(document.getElementById('accountPairStatus')!.textContent).toContain('Confirm the matching request'));
+  expect(configuration.value).toBe('retained configuration'); expect(claims).toBeGreaterThanOrEqual(1); expect((document.getElementById('accountClaimBtn') as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('follows Chinese browser UI language, falls back to English and keeps manual configuration collapsed', () => {
+  let document = openPopup(vi.fn(), undefined, 'zh-CN');
+  expect(document.documentElement.lang).toBe('zh-CN'); expect(document.getElementById('accountFindBtn')!.textContent).toBe('查找知行');
+  expect((document.getElementById('manualPairing') as HTMLDetailsElement).open).toBe(false);
+  (popup!.window as any).paintHeader({ needsSetup: true }); expect(document.getElementById('state')!.textContent).toBe('需要连接账号');
+  popup!.window.close(); document = openPopup(vi.fn(), undefined, 'fr-FR');
+  expect(document.documentElement.lang).toBe('en'); expect(document.getElementById('accountFindBtn')!.textContent).toBe('Find app');
+});
+it('honors an explicit language choice and leaves account JSON and identifiers unchanged', async () => {
+  const document = openPopup(vi.fn(), undefined, 'zh-CN', { popupLanguage: 'en' });
+  await vi.waitFor(() => expect(document.documentElement.lang).toBe('en'));
+  const input = document.getElementById('accountConfiguration') as HTMLTextAreaElement; input.value = '{"browser":"chrome","accountId":"unchanged"}';
+  const select = document.getElementById('languageSelect') as HTMLSelectElement;
+  select.value = 'zh-CN'; select.dispatchEvent(new popup!.window.Event('change'));
+  expect(document.documentElement.lang).toBe('zh-CN'); expect(document.getElementById('accountFindBtn')!.textContent).toBe('查找知行');
+  expect(input.value).toBe('{"browser":"chrome","accountId":"unchanged"}');
+  select.value = 'system'; select.dispatchEvent(new popup!.window.Event('change')); expect(document.documentElement.lang).toBe('zh-CN');
+});
+it('connects a selected invitation without exposing JSON or automatically selecting another app', async () => {
+  const requests: Record<string, unknown>[] = [];
+  const document = openPopup(vi.fn(), async message => {
+    requests.push(message);
+    if (message.type === 'account_pair_discover') return { ok: true, candidates: [{ displayName: 'Work', setupId: 'invitation', configuration: { browser: 'chrome', port: 18765 } }] };
+    if (message.type === 'account_pair_connect') return { ok: true, pending: true, expiresAt: Date.now() + 100000, requestId: 'request-id' };
+    return new Promise(() => undefined);
+  }, 'zh-CN');
+  document.getElementById('accountFindBtn')!.click();
+  await vi.waitFor(() => expect(document.querySelector('#accountCandidates button')).not.toBeNull());
+  expect(requests.some(row => row.type === 'account_pair_connect')).toBe(false);
+  (document.querySelector('#accountCandidates button') as HTMLButtonElement).click();
+  await vi.waitFor(() => expect(requests).toContainEqual({ type: 'account_pair_connect', setupId: 'invitation', port: 18765 }));
+  expect((document.getElementById('accountConfiguration') as HTMLTextAreaElement).value).toBe('');
 });
