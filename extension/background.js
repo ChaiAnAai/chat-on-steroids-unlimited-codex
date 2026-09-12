@@ -1064,8 +1064,10 @@ async function latchAppDisconnect() {
 /** One authenticated request. Returns { ok, status, data } and never throws. */
 async function call(path, init = {}, retried = false) {
   await load();
+  const allowIdentityPending = init.allowIdentityPending === true;
+  if (allowIdentityPending) { init = { ...init }; delete init.allowIdentityPending; }
   const callEpoch = connectionEpoch;
-  if (accountIdentityPending) return { ok: false, error: 'account_identity_pending', needsSetup: true, message: ACCOUNT_IDENTITY_MESSAGE };
+  if (accountIdentityPending && !allowIdentityPending) return { ok: false, error: 'account_identity_pending', needsSetup: true, message: ACCOUNT_IDENTITY_MESSAGE };
   if (accountSetupRequired) return accountSetupResult();
   const found = await discover();
   if (callEpoch !== connectionEpoch) return { ok: false, error: 'stale_connection' };
@@ -3366,7 +3368,7 @@ const HANDLERS = {
   async settings_get(_message, _sender, source) {
     await load();
     if (!ownsDocument(source)) return { ok: false, error: 'stale_document' };
-    const result = await call('/settings', { method: 'GET' });
+    const result = await call('/settings', { method: 'GET', allowIdentityPending: true });
     return ownsDocument(source) ? result : { ok: false, error: 'stale_document' };
   },
   /** The composer's settings menu, which owns exactly two switches. */

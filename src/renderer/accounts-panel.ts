@@ -65,7 +65,7 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
       const card = document.createElement('article'); card.className = 'accounts-card';
       const title = document.createElement('h3'); title.textContent = account.displayName;
       const identity = document.createElement('p'); identity.textContent = account.identity ? text('Browser-reported identity: ', '浏览器报告的身份：') + account.identity.displayLabel : text('Login identity unknown — awaiting confirmation', '身份待重新确认（登录身份未知）');
-      const state = document.createElement('p'); state.textContent = `${account.browser === 'chrome' ? 'Chrome' : 'Edge'} · ${account.connected ? text('Extension paired', '扩展已配对') : text('Disconnected', '未连接')} · ${account.paused ? text('Tasks paused', '任务已暂停') : text('Task activation unavailable', '任务启动不可用')}`;
+      const state = document.createElement('p'); state.textContent = account.connected && account.identity ? text('Connected · identity confirmed', '已连接 · 身份已确认') : account.connected ? text('Connected · identity confirmation needed', '已连接 · 需要确认身份') : text('Not connected', '未连接');
       state.textContent += account.existingProfileDirectory ? ` · ${text('Existing profile', '已有个人资料')} ${account.existingProfileDirectory}` : ` · ${text('Dedicated profile', '专用个人资料')}`;
       const quota = document.createElement('p'); const usage = snapshot.quotas?.[account.id];
       quota.textContent = usage?.state === 'fresh' ? text('Quota remaining: ', '剩余额度：') + usage.rows.map(row => `${row.model} · ${row.remainingPercent === null ? text('unknown', '未知') : `${row.remainingPercent}%`}`).join(' / ')
@@ -82,7 +82,7 @@ export function mountAccountsPanel(container: HTMLElement, deps: AccountsPanelDe
       }
       action('Connect extension', '连接扩展', { action: 'prepare-pairing', accountId: account.id });
       action('Open browser profile', '打开浏览器配置', { action: 'open', accountId: account.id });
-      action('Reconnect saved pairing', '重连并重新确认身份', { action: 'reconnect', accountId: account.id });
+      action(account.connected && !account.identity ? 'Confirm identity' : 'Reconnect saved pairing', account.connected && !account.identity ? '确认身份' : '重连并重新确认身份', { action: 'reconnect', accountId: account.id });
       for (const pending of snapshot.pending.filter(row => row.accountId === account.id)) {
         const match = document.createElement('p'); match.textContent = text('Compare the extension request code before confirming: ', '确认前请核对扩展中的请求编号：') + pending.requestId.slice(0, 8); actions.append(match);
         action(`Confirm pairing ${pending.requestId.slice(0, 8)}`, `确认配对 ${pending.requestId.slice(0, 8)}`, { action: 'confirm', accountId: account.id, requestId: pending.requestId });

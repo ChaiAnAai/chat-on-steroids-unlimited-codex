@@ -37,7 +37,7 @@ function paintAccountPair(state) {
   $('accountRecheckBtn').disabled = accountPairBusy || !state.configuration;
   $('accountPairStatus').textContent = accountPairError || (state.pending && seconds > 0
     ? tr(`Request ${String(state.requestId || '').slice(0, 8)} — confirm the matching code in the app. ${seconds}s remaining. Reopen this popup afterwards; pairing finishes automatically.`, `请求 ${String(state.requestId || '').slice(0, 8)}：请在知行核对编号并确认。剩余 ${seconds} 秒，之后重新打开此弹窗即可自动完成。`)
-    : state.paired ? tr('Pairing saved. Login identity still needs verification; tasks remain paused.', '配对已保存；登录身份待验证，任务仍暂停。')
+    : state.paired ? tr('Connected to the app. Login identity still needs verification; sync settings remain available.', '已连接知行；登录身份仍待确认，但同步设置可以使用。')
       : seconds === 0 && state.expiresAt ? tr('Pairing expired. Find the app and try again.', '配对已过期，请重新查找知行并连接。') : tr('Waiting for a connection invitation. Pairing does not start tasks.', '等待连接邀请。配对不会自动启动任务。'));
 }
 async function accountPairAction(type, extra = {}) {
